@@ -10,14 +10,14 @@
 
 #include <cublas.h>
 
+#define DEBUG false
+
 #define MAX 100
 #define MULTIPLIER 1.0
 
 #define MAX_ARRAY_SIZE 1<<20
 
 #define index(i,j,ld) (((j)*(ld))+(i))
-// #define index(h,w,height) (((h)*(height))+(w))
-// #define index(h,w,height) (((w)*(height))+(h))
 
 // Struct to hold multiple timing metrics per run for comparison
 struct MultTiming {
@@ -25,7 +25,7 @@ struct MultTiming {
     float overallTime;
 };
 
-//
+// Print Matrix on host
 void printMat(float*P,int uWP,int uHP){
     //printf("\n %f",P[1]);
     int i,j;
@@ -37,6 +37,8 @@ void printMat(float*P,int uWP,int uHP){
     printf("\n");
 }
 
+// For printing entire network from device
+// meant for debugging.
 void printNetwork(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
     int input_layer_size, int hidden_layer_1_size, int hidden_layer_2_size, int output_layer_size){
     
@@ -88,29 +90,15 @@ __host__ int cuRandCall(curandStatus_t value, const char* file, int line){
 
 
 // apply sigmoid function to a value of arrays
+// sigmoid = (1 / (1 + e^(-input)))
 __global__ void sigmoid(float* input, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements)
 	{
-        input[tid] = 1 / (1-exp(-1*input[tid]));
+        float value = 1.0 / (1.0 + exp(-1*input[tid]));
+        input[tid] = value;
     }
 }
-
-/**
-* Main kernel to add arrays together in parallel.
-*/
-__global__ void add_arrays_kernel(int num_elements,
-    float alpha, 
-    float * array_a, 
-    float * array_b)
-{
-    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
-    if(tid < num_elements)
-    {
-        array_b[tid] = alpha * array_a[tid] + array_b[tid];
-    }
-}
-
 
 /**
 * Creates a CUDA event at the current time
@@ -142,9 +130,11 @@ __host__ void init_array(int ** array, int arraySize, int offset){
     }
 }
 
-
+// randomly initialize array
 void initWeights(float ** d_array, int arraySize){
+    #if DEBUG
     printf("init Weights\n");
+    #endif
     // init arrays on the device using cuRAND
     // code adapted from https://docs.nvidia.com/cuda/curand/host-api-overview.html#host-api-overview 
     curandGenerator_t gen;
@@ -159,101 +149,45 @@ void initWeights(float ** d_array, int arraySize){
 }
 
 // multiplies an input vector 1 row x yColumns 
-float* layerMult(float* input_values, int input_size, float * weights, int weight_col_size){
+float* layerMult(float* input_values, int input_size, 
+                float * weights, int weight_col_size){
     cublasStatus status;
     // const float alpha = 1.0;
 
     float* layer_outputs;
-    // CUDA_CALL(cudaMalloc((void **) &layer_outputs, (1*weight_col_size) * sizeof(float)));
-
-    float* dev_in;
-    float* dev_w;
-    float* dev_out;
-
-    float* a = 0;
-    float* b = 0;
-    a = (float *)malloc (1 * 5 * sizeof (*a));
-    b = (float *)malloc (5 * 1 * sizeof (*b));
-    
-    for(int i = 0; i < 5; i++){
-        a[i] = 1;
-        b[i] = 1;
-    }
-
-    
-
-    status = cublasAlloc(5, sizeof(*a), (void **) &dev_in);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        fprintf (stderr, "!!!! device memory allocation error (A)\n");
-        exit(1);
-      }
-    status = cublasSetMatrix(1, 5, sizeof(*a), a, 1, dev_in, 1);
-    // if (status != CUBLAS_STATUS_SUCCESS) {
-    //     fprintf (stderr, "!!!! device memory allocation error (d)\n");
-    //     exit(1);
-    // }
-
-    status = cublasAlloc((5), sizeof(float), (void **) &dev_w);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        fprintf (stderr, "!!!! device memory allocation error (b)\n");
-        exit(1);
-    }
-    
-    status=cublasSetMatrix(5,1,sizeof(float),b, 5, dev_w, 5);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-      fprintf (stderr, "!!!! device memory allocation error (e)\n");
-      exit(1);
-    }
-
-    status = cublasAlloc(1, sizeof(float),(void **) &dev_out);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        fprintf (stderr, "!!!! device memory allocation error (c)\n");
-        exit(1);
-    }
+    status = cublasAlloc((1*weight_col_size), sizeof(float),(void **) &layer_outputs);
 
 
-    printf("about to run Matrix \n");
     cublasSgemm('n', 'n', 
-        1, 1, 5, // a_rows, b_columns, a_columns 
+        1, weight_col_size, input_size, // a_rows, b_columns, a_columns 
         1, // alpha
-        dev_in, 1, // a, a rows leading dimension (height)
-        dev_w, 5, // b, rows of weights (= input_size)
+        input_values, 1, // a, a rows leading dimension (height)
+        weights, input_size, // b, rows of weights (= input_size)
         0, // beta 
-        dev_out, 1); // output,  output leading dimension (height)
+        layer_outputs, 1); // output,  output leading dimension (height)
     
-    float* c = (float *)malloc (1 * 1 * sizeof (*a));
-    status = cublasGetMatrix (1, 1, sizeof(*c), dev_out, 1, c, 1);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        printf ("data upload failed\n");
-        // cublasFree (devPtrA);
-        cublasShutdown();
-        exit(1);
-    }
-
-    cublasShutdown();
-    for (int j = 0; j < 1; j++) {
-        for (int i = 0; i < 1; i++) {
-            printf ("%7.0f", c[index(i,j,1)]);
-        }
-        printf ("\n");
-    }
-    free(a);
-    free(b);
-    free(c);
-
-    // cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 
-    //             1, weight_col_size, input_size, // a_rows, b_columns, a_columns
-    //             &alpha, // alpha
-    //             input_values, input_size, // a, a rows leading dimension (height)
-    //             weights, input_size, // b, rows of weights (= input_size)
-    //             0, // beta 
-    //             layer_outputs, weight_col_size); // output,  output leading dimension (height)
-    // status = cublasGetError();
     
     // perform sigmoid transform to hidden layer values
     // input now has hidden layer 1 values
     // printf("about to run sigmoid\n");
-    // sigmoid<<<1, weight_col_size>>>(layer_outputs, weight_col_size);
+    sigmoid<<<1, weight_col_size>>>(layer_outputs, weight_col_size);
+    
+    #if DEBUG
+    float* c = (float *)malloc (1 * weight_col_size * sizeof (float));
+    status = cublasGetMatrix (1, weight_col_size, sizeof(*c), layer_outputs, 1, c, 1);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        printf ("data upload failed\n");
+        exit(1);
+    }
+
+    for (int j = 0; j < 1; j++) {
+        for (int i = 0; i < weight_col_size; i++) {
+            printf("%f ",c[index(i,j,1)]);
+        }
+        printf ("\n");
+    }
+    #endif
+
     return layer_outputs;
 }
 
@@ -265,7 +199,10 @@ float* forwardPass(float* input_values, int input_size,
                 float* weights2, int hidden_layer_2_size,
                 float* weights3, int output_layer_size
             ){
-    printf("forward Pass \n");
+    #if DEBUG
+    printf("Forward Pass \n");
+    #endif
+    
     // wieght matrix size = input_size X hidden_layer_size
     // Weigth matrix is stored as each array of weights is a column. 
     // So the height of W (number of rows) is = to the number of nodes in the previous layer
@@ -304,13 +241,13 @@ int main(int argc, char** argv) {
     CUDA_CALL(cudaMalloc((void **) &input_values, (input_layer_size) * sizeof(float)));
 
     // // cuda malloc space for weight matrices on GPU
-    CUDA_CALL(cudaMalloc((void **) &weights1, (input_layer_size * hidden_layer_1_size) * sizeof(float)));
-    CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
-    CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
+    // CUDA_CALL(cudaMalloc((void **) &weights1, (input_layer_size * hidden_layer_1_size) * sizeof(float)));
+    // CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
+    // CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
 
-    // status = cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1);
-    // status = cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2);
-    // status = cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3);
+    status = cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1);
+    status = cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2);
+    status = cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3);
 
     // // init input as random for testing for now
     initWeights(&input_values, input_layer_size);
@@ -318,22 +255,24 @@ int main(int argc, char** argv) {
     initWeights(&weights2, hidden_layer_1_size * hidden_layer_2_size);
     initWeights(&weights3, hidden_layer_2_size * output_layer_size);
 
-    // float *h_input = (float*)malloc(1*input_layer_size*sizeof(float));
-    // cublasGetMatrix(1, input_layer_size, sizeof(float), input_values, 1, h_input, 1);
-    
-
     // printMat(C, input_layer_size, 1);
-    // printNetwork(input_values, weights1, weights2, weights3, 
-    //             input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+    #if DEBUG
+    printNetwork(input_values, weights1, weights2, weights3, 
+                input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+    #endif
 
-    // // Weight M
-    forwardPass(input_values, input_layer_size,
+    // output is still on device
+    float* dev_output = forwardPass(input_values, input_layer_size,
         weights1, hidden_layer_1_size,
         weights2, hidden_layer_2_size,
         weights3, output_layer_size
     );
 
-    
+    float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
+    status = cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_output, 1, h_output, 1);
+
+    printf("Network output: ");
+    printMat(h_output, output_layer_size, 1);
     return true;
 }
 
