@@ -2,30 +2,32 @@
 #include <stdlib.h>
 #include <iostream>
 #include <math.h>
-// #include <cuda.h>
-#include "cublas.h"
 
+#include "cublas.h"
 #include <curand.h>
 #include <curand_kernel.h>
 
-#include <cublas.h>
-
 #define DEBUG false
-
-#define MAX 100
-#define MULTIPLIER 1.0
-
-#define MAX_ARRAY_SIZE 1<<20
-
 #define index(i,j,ld) (((j)*(ld))+(i))
 
-// Struct to hold multiple timing metrics per run for comparison
-struct MultTiming {
-    float initTime;
-    float overallTime;
-};
 
-// Print Matrix on host
+struct Network{
+    float* input_values; 
+    float* w1; 
+    float* w2; 
+    float* w3; 
+} typedef Network;
+
+struct NetworkOuput{
+    float* layer1; 
+    float* layer2; 
+    float* output; 
+} typedef NetworkOutput;
+
+/*
+*  Print Matrix on host
+*
+*/
 void printMat(float*P,int uWP,int uHP){
     //printf("\n %f",P[1]);
     int i,j;
@@ -37,8 +39,10 @@ void printMat(float*P,int uWP,int uHP){
     printf("\n");
 }
 
-// For printing entire network from device
-// meant for debugging.
+/*
+*  For printing entire network from device
+*  meant for debugging
+*/
 void printNetwork(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
     int input_layer_size, int hidden_layer_1_size, int hidden_layer_2_size, int output_layer_size){
     
@@ -68,8 +72,12 @@ void printNetwork(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
 __host__ int cudaCall(cudaError_t value, int line) {                                                                                      
     cudaError_t _m_cudaStat = value;                                                                                
     if (_m_cudaStat != cudaSuccess) {                                                                               
+        printf("Error %s at line %d \n", cudaGetErrorString(_m_cudaStat), line);           
             printf("Error %s at line %d \n", cudaGetErrorString(_m_cudaStat), line);           
+        printf("Error %s at line %d \n", cudaGetErrorString(_m_cudaStat), line);           
+        exit(1);                                                                                                                        
             exit(1);                                                                                                                        
+        exit(1);                                                                                                                        
     } 
     return 0;
 }
@@ -82,15 +90,29 @@ __host__ int cudaCall(cudaError_t value, int line) {
 __host__ int cuRandCall(curandStatus_t value, const char* file, int line){ 
     if( value != CURAND_STATUS_SUCCESS) {
         printf("Error at %s:%d\n",__FILE__,__LINE__);
-        return EXIT_FAILURE;
+        exit(1);
     }
     return 0;
 }
 #define CURAND_CALL(value) cuRandCall(value, __FILE__, __LINE__)
 
 
-// apply sigmoid function to a value of arrays
-// sigmoid = (1 / (1 + e^(-input)))
+__host__ int cublasCall(cublasStatus status, const char* file, int line) {
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        printf("CUBLAS Error %d at %s:%d \n", status, file, line);
+        exit(1);
+    }
+    return 0;
+}
+#define CUBLAS_CALL(value) cublasCall( value, __FILE__, __LINE__)
+
+/*
+* Kernel 
+* apply sigmoid function to a value of arrays
+* sigmoid = (1 / (1 + e^(-input)))
+*
+*/
+
 __global__ void sigmoid(float* input, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements)
@@ -119,18 +141,11 @@ cudaEvent_t getTime(cudaStream_t stream)
     return time;
 }
 
-/**
-* Helper function to init arrays on host
+/*
+* initialize a GPU array using CURAND
+* Currently it uses a default seed for repeatability and testing 
 *
-*/ 
-__host__ void init_array(int ** array, int arraySize, int offset){
-    int* array_actual = *array; 
-    for(int i = 0; i < arraySize; i++){
-        array_actual[i] = i + offset; 
-    }
-}
-
-// randomly initialize array
+*/
 void initWeights(float ** d_array, int arraySize){
     #if DEBUG
     printf("init Weights\n");
@@ -148,14 +163,13 @@ void initWeights(float ** d_array, int arraySize){
     CURAND_CALL(curandGenerateUniform(gen, *d_array, arraySize));
 }
 
-// multiplies an input vector 1 row x yColumns 
+/* 
+* Multiplies an input vector 1 row x yColumns 
+*/
 float* layerMult(float* input_values, int input_size, 
                 float * weights, int weight_col_size){
-    cublasStatus status;
-    // const float alpha = 1.0;
-
     float* layer_outputs;
-    status = cublasAlloc((1*weight_col_size), sizeof(float),(void **) &layer_outputs);
+    CUBLAS_CALL(cublasAlloc((1*weight_col_size), sizeof(float),(void **) &layer_outputs));
 
 
     cublasSgemm('n', 'n', 
@@ -186,6 +200,7 @@ float* layerMult(float* input_values, int input_size,
         }
         printf ("\n");
     }
+    free(c);
     #endif
 
     return layer_outputs;
@@ -212,6 +227,9 @@ float* forwardPass(float* input_values, int input_size,
     float* layer1_outputs = layerMult(input_values, input_size, weights1, hidden_layer_1_size);
     float* layer2_outputs = layerMult(layer1_outputs, hidden_layer_1_size, weights2, hidden_layer_2_size);
     float* output = layerMult(layer2_outputs, hidden_layer_2_size, weights3, output_layer_size);
+    
+    cublasFree(layer1_outputs);
+    cublasFree(layer2_outputs);
 
     return output;
 }
@@ -245,9 +263,9 @@ int main(int argc, char** argv) {
     // CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
     // CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
 
-    status = cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1);
-    status = cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2);
-    status = cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3);
+    CUBLAS_CALL(cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1));
+    CUBLAS_CALL(cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2));
+    CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3));
 
     // // init input as random for testing for now
     initWeights(&input_values, input_layer_size);
@@ -269,10 +287,19 @@ int main(int argc, char** argv) {
     );
 
     float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
-    status = cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_output, 1, h_output, 1);
+    CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_output, 1, h_output, 1));
 
     printf("Network output: ");
     printMat(h_output, output_layer_size, 1);
+
+    free(h_output);
+    cublasFree(input_values);
+    cublasFree(weights1);
+    cublasFree(weights2);
+    cublasFree(weights3);
+    cublasFree(dev_output);
+
+    cublasShutdown();
     return true;
 }
 
