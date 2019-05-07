@@ -1,28 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
+#include <fstream>
+
+#include <string>
 #include <math.h>
 
 #include "cublas.h"
 #include <curand.h>
 #include <curand_kernel.h>
 
+#include "network.hpp"
+
 #define DEBUG false
 #define index(i,j,ld) (((j)*(ld))+(i))
 
-
-struct Network{
-    float* input_values; 
-    float* w1; 
-    float* w2; 
-    float* w3; 
-} typedef Network;
-
-struct NetworkOuput{
-    float* layer1; 
-    float* layer2; 
-    float* output; 
-} typedef NetworkOutput;
+using namespace std;
 
 /*
 *  Print Matrix on host
@@ -43,7 +36,7 @@ void printMat(float*P,int uWP,int uHP){
 *  For printing entire network from device
 *  meant for debugging
 */
-void printNetwork(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
+void printNetworkFromDev(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
     int input_layer_size, int hidden_layer_1_size, int hidden_layer_2_size, int output_layer_size){
     
     float *h_input = (float*)malloc(1*input_layer_size*sizeof(float));
@@ -234,26 +227,64 @@ float* forwardPass(float* input_values, int input_size,
     return output;
 }
 
+
+NetworkArch* readNetworkArch(InputValues* iv){
+    NetworkArch* networkArch = new NetworkArch;
+    string archFile = iv->archFile;
+    ifstream f (archFile);
+    if (!f.good()){
+        cout<< "Bad Arch File" << endl;
+        exit(EXIT_FAILURE);
+    }    
+
+    string layerSize; 
+    getline(f, layerSize, ',');
+    networkArch->inputLayer = stoi(layerSize);
+    
+    getline(f, layerSize, ',');
+    networkArch->layer1 = stoi(layerSize);
+    
+    getline(f, layerSize, ',');
+    networkArch->layer2 = stoi(layerSize);
+    
+    getline(f, layerSize); // get last layer number
+    networkArch->outputLayer = stoi(layerSize);
+
+    f.close();
+
+    return networkArch;
+}
+
 /**
 * Main program
 *
 */
 int main(int argc, char** argv) {
+
+    // read CLI args
+    InputValues iv = InputValues();
+    iv.readInputValues(argc, argv);
+    iv.validateArgs();
+    
+    NetworkArch* networkArch = readNetworkArch(&iv);
+    printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
+    
+
     cublasStatus status;
     cublasInit();
-    int input_layer_size = 3; 
-    int hidden_layer_1_size = 10; 
-    int hidden_layer_2_size = 5;
-    int output_layer_size = 3; 
+    int input_layer_size = networkArch->inputLayer; 
+    int hidden_layer_1_size = networkArch->layer1; 
+    int hidden_layer_2_size = networkArch->layer2;
+    int output_layer_size = networkArch->outputLayer; 
 
     // wieght matrix size = input_size X hidden_layer_size
     // Weigth matrix is stored as each array of weights is a column. 
     // So the hieght of W (number of rows) is = to the number of inputs into the next layer's node
     // The width of W (number of columns) is = to the number of nodes in the next layer
     float * input_values;
-    float* weights1; 
-    float* weights2;
-    float* weights3; 
+    float* weights1_d; 
+    float* weights2_d;
+    float* weights3_d; 
     
     // cuda malloc input value space on GPU
     CUDA_CALL(cudaMalloc((void **) &input_values, (input_layer_size) * sizeof(float)));
@@ -263,27 +294,28 @@ int main(int argc, char** argv) {
     // CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
     // CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
 
-    CUBLAS_CALL(cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1));
-    CUBLAS_CALL(cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2));
-    CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3));
+    CUBLAS_CALL(cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1_d));
+    CUBLAS_CALL(cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2_d));
+    CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3_d));
 
-    // // init input as random for testing for now
-    initWeights(&input_values, input_layer_size);
-    initWeights(&weights1, input_layer_size * hidden_layer_1_size);
-    initWeights(&weights2, hidden_layer_1_size * hidden_layer_2_size);
-    initWeights(&weights3, hidden_layer_2_size * output_layer_size);
+    // init input as random for testing for now
+    if(iv->weightsFile.empty()){
+        initWeights(&input_values, input_layer_size);
+        initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
+        initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
+        initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
+    }
 
-    // printMat(C, input_layer_size, 1);
     #if DEBUG
-    printNetwork(input_values, weights1, weights2, weights3, 
+    printNetworkFromDev(input_values, weights1, weights2, weights3, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
 
     // output is still on device
     float* dev_output = forwardPass(input_values, input_layer_size,
-        weights1, hidden_layer_1_size,
-        weights2, hidden_layer_2_size,
-        weights3, output_layer_size
+        weights1_d, hidden_layer_1_size,
+        weights2_d, hidden_layer_2_size,
+        weights3_d, output_layer_size
     );
 
     float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
@@ -294,9 +326,9 @@ int main(int argc, char** argv) {
 
     free(h_output);
     cublasFree(input_values);
-    cublasFree(weights1);
-    cublasFree(weights2);
-    cublasFree(weights3);
+    cublasFree(weights1_d);
+    cublasFree(weights2_d);
+    cublasFree(weights3_d);
     cublasFree(dev_output);
 
     cublasShutdown();
