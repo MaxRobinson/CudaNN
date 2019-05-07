@@ -33,7 +33,7 @@ class InputValues {
     public: 
         bool useValidationSet = false;
         std::string archFile;
-        std::string wieghtsFile; 
+        std::string weightsFile; 
         std::string trainingFile; 
         std::string validationFile;
         std::string evaluationFile; 
@@ -51,7 +51,7 @@ class InputValues {
                 }
                 else if (!input.compare("--weights"))
                 {
-                    this->wieghtsFile = std::string(argv[++i]);
+                    this->weightsFile = std::string(argv[++i]);
                 }
                 else if (!input.compare("--training"))
                 {

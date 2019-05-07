@@ -115,6 +115,13 @@ __global__ void sigmoid(float* input, int num_elements){
     }
 }
 
+__global__ void squaredError(float* predicted_values, float* actual_values, int num_elements){
+    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
+    if(tid < num_elements){
+        float value = pow(actual_values[tid] - predicted_values[tid], 2.0);
+    }
+}
+
 /**
 * Creates a CUDA event at the current time
 * Provided by grader
@@ -299,7 +306,7 @@ int main(int argc, char** argv) {
     CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3_d));
 
     // init input as random for testing for now
-    if(iv->weightsFile.empty()){
+    if(iv.weightsFile.empty()){
         initWeights(&input_values, input_layer_size);
         initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
         initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
