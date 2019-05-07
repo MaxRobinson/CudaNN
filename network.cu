@@ -115,10 +115,15 @@ __global__ void sigmoid(float* input, int num_elements){
     }
 }
 
-__global__ void squaredError(float* predicted_values, float* actual_values, int num_elements){
+/**
+* Calculates the Squred Error Pair wise for two array of elements.
+* Used to provide amount of correction needed to network to back prop through the network.
+*/
+__global__ void squaredError(float* predicted_values, float* actual_values, float* results, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements){
         float value = pow(actual_values[tid] - predicted_values[tid], 2.0);
+        results[tid] = value;
     }
 }
 
