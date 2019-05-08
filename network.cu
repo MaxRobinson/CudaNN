@@ -292,33 +292,6 @@ NetworkOutput* forwardPass(float* input_values, int input_size,
 }
 
 
-NetworkArch* readNetworkArch(InputValues* iv){
-    NetworkArch* networkArch = new NetworkArch;
-    string archFile = iv->archFile;
-    ifstream f (archFile);
-    if (!f.good()){
-        cout<< "Bad Arch File" << endl;
-        exit(EXIT_FAILURE);
-    }    
-
-    string layerSize; 
-    getline(f, layerSize, ',');
-    networkArch->inputLayer = stoi(layerSize);
-    
-    getline(f, layerSize, ',');
-    networkArch->layer1 = stoi(layerSize);
-    
-    getline(f, layerSize, ',');
-    networkArch->layer2 = stoi(layerSize);
-    
-    getline(f, layerSize); // get last layer number
-    networkArch->outputLayer = stoi(layerSize);
-
-    f.close();
-
-    return networkArch;
-}
-
 /**
 * Main program
 *
@@ -383,6 +356,25 @@ int main(int argc, char** argv) {
         weights2_d, hidden_layer_2_size,
         weights3_d, output_layer_size
     );
+
+    // start backprop
+    
+    // for fun, get the squared error for the nodes
+    // squaredError<<<1, 
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
     CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));

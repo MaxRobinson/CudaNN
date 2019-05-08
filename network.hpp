@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
+#include <fstream>
 #include <string>
 #ifndef network
 #define network
@@ -84,6 +85,33 @@ class InputValues {
 
 };
 
+
+NetworkArch* readNetworkArch(InputValues* iv){
+    NetworkArch* networkArch = new NetworkArch;
+    string archFile = iv->archFile;
+    ifstream f (archFile);
+    if (!f.good()){
+        cout<< "Bad Arch File" << endl;
+        exit(EXIT_FAILURE);
+    }    
+
+    string layerSize; 
+    getline(f, layerSize, ',');
+    networkArch->inputLayer = stoi(layerSize);
+    
+    getline(f, layerSize, ',');
+    networkArch->layer1 = stoi(layerSize);
+    
+    getline(f, layerSize, ',');
+    networkArch->layer2 = stoi(layerSize);
+    
+    getline(f, layerSize); // get last layer number
+    networkArch->outputLayer = stoi(layerSize);
+
+    f.close();
+
+    return networkArch;
+};
 
 
 #endif
