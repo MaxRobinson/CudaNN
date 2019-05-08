@@ -12,7 +12,7 @@
 
 #include "network.hpp"
 
-#define DEBUG false
+#define DEBUG true
 #define index(i,j,ld) (((j)*(ld))+(i))
 
 using namespace std;
@@ -128,6 +128,53 @@ __global__ void squaredError(float* predicted_values, float* actual_values, floa
 }
 
 /**
+* formula
+* \detla k = (predicted) * (1 - predicted) * error 
+* error = (actual - predicted)
+*/ 
+__global__ 
+void outputNodeDeltaK(float* predicted_values, float* actual_values, float* res_delta_k_list, int num_elements){
+    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
+    if(tid < num_elements){
+        float predicted_value = predicted_values[tid];
+        float actual_value = actual_values[tid]; 
+        float delta_k =  predicted_value * (1 - predicted_value) * (actual_value - predicted_value);
+        res_delta_k_list[tid] = delta_k;
+    }
+}
+
+// __global__ 
+// void hiddenLayerError(float* previous_layer_weights, float* layer_outputs, float* layer_errors, float* layer_deltas, int num_elements){
+
+// }
+
+// delta_j output output size will be equal to size of the current layer 
+__global__ 
+void hiddenLayerError(float* layer_outputs, float* contribution_factors, float* res_layer_delta_js, int num_elements){
+    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
+    if(tid < num_elements){
+        float node_output = layer_outputs[tid];
+        float contribution_factor = contribution_factors[tid];
+        float delta_j = (1 - node_output) * node_output * contribution_factor;
+        res_layer_delta_js[tid] = delta_j;
+    }
+
+}
+
+
+// used for both hidden and output layer weights
+__global__
+void weightUpdate(float* current_weights, float* deltas, float* previous_layer_input, float alpha, int num_elements){
+    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
+    if(tid < num_elements){
+        // note previous layer input array needs to be made of equal size to the weights they affect (or needs to be made a constant and this code restructured)
+        // previous layer is closer to the start of the network
+        current_weights[tid] = (current_weights[tid]) + (alpha * deltas[tid] * previous_layer_input[tid]);
+    }
+}
+
+
+/**
 * Creates a CUDA event at the current time
 * Provided by grader
 *
@@ -193,7 +240,7 @@ float* layerMult(float* input_values, int input_size,
     
     #if DEBUG
     float* c = (float *)malloc (1 * weight_col_size * sizeof (float));
-    status = cublasGetMatrix (1, weight_col_size, sizeof(*c), layer_outputs, 1, c, 1);
+    int status = cublasGetMatrix (1, weight_col_size, sizeof(*c), layer_outputs, 1, c, 1);
     if (status != CUBLAS_STATUS_SUCCESS) {
         printf ("data upload failed\n");
         exit(1);
@@ -214,6 +261,7 @@ float* layerMult(float* input_values, int input_size,
 // Calculates the forward pass of a neural network with 2 hidden layers
 // each layer is calculation of 1/(1-exp(-1*sum(x_i*w_i))) for each node in the next layer 
 // where x is an input vector and w corresponds to the weights for that input node per each input value from x
+// NetworkOutput* forwardPass(float* input_values, int input_size,
 float* forwardPass(float* input_values, int input_size,
                 float* weights1, int hidden_layer_1_size,
                 float* weights2, int hidden_layer_2_size,
@@ -235,6 +283,14 @@ float* forwardPass(float* input_values, int input_size,
     
     cublasFree(layer1_outputs);
     cublasFree(layer2_outputs);
+    
+    // need to save the layer outputs
+    // NetworkOutput* networkOutput = new NetworkOutput; 
+    
+    // dont forget to cublasFree these pointers
+    // networkOutput -> layer1 = layer1_outputs;
+    // networkOutput -> layer2 = layer2_outputs;
+    // networkOutput -> output = output;
 
     return output;
 }
@@ -312,6 +368,8 @@ int main(int argc, char** argv) {
 
     // init input as random for testing for now
     if(iv.weightsFile.empty()){
+        cout << "Initializing weights with Random values" << endl;
+
         initWeights(&input_values, input_layer_size);
         initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
         initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
@@ -319,11 +377,12 @@ int main(int argc, char** argv) {
     }
 
     #if DEBUG
-    printNetworkFromDev(input_values, weights1, weights2, weights3, 
+    printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
 
     // output is still on device
+    // NetworkOutput* dev_network_output = forwardPass(input_values, input_layer_size,
     float* dev_output = forwardPass(input_values, input_layer_size,
         weights1_d, hidden_layer_1_size,
         weights2_d, hidden_layer_2_size,
@@ -332,6 +391,8 @@ int main(int argc, char** argv) {
 
     float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
     CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_output, 1, h_output, 1));
+
+    // CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));
 
     printf("Network output: ");
     printMat(h_output, output_layer_size, 1);
@@ -342,6 +403,10 @@ int main(int argc, char** argv) {
     cublasFree(weights2_d);
     cublasFree(weights3_d);
     cublasFree(dev_output);
+
+    // cublasFree(dev_network_output->layer1);
+    // cublasFree(dev_network_output->layer2);
+    // cublasFree(dev_network_output->output);
 
     cublasShutdown();
     return true;
