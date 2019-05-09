@@ -14,6 +14,8 @@
 
 #define DEBUG true
 #define index(i,j,ld) (((j)*(ld))+(i))
+#define ALPHA .1
+
 
 using namespace std;
 
@@ -25,7 +27,9 @@ void printMat(float*P,int uWP,int uHP){
     //printf("\n %f",P[1]);
     int i,j;
     for(i=0;i<uHP;i++){
-        printf("\n");
+        if(i != 0){
+            printf("\n");
+        }
         for(j=0;j<uWP;j++)
             printf("%f ",P[index(i,j,uHP)]);
     }
@@ -51,11 +55,15 @@ void printNetworkFromDev(float* dev_input, float* dev_w1, float* dev_w2, float* 
     float *h_w3 = (float*)malloc(hidden_layer_2_size*output_layer_size*sizeof(float));
     cublasGetMatrix(hidden_layer_2_size, output_layer_size, sizeof(float), dev_w3, hidden_layer_2_size, h_w3, hidden_layer_2_size);
 
-
+    cout<<"  input" <<endl;
     printMat(h_input, input_layer_size, 1);
+    cout<<"  layer1" <<endl;
     printMat(h_w1, hidden_layer_1_size, input_layer_size);
+    cout<<"  layer2" <<endl;
     printMat(h_w2, hidden_layer_2_size, hidden_layer_1_size);
+    cout<<"  layer3" <<endl;
     printMat(h_w3, output_layer_size, hidden_layer_2_size); 
+    cout<<endl;
 }
 
 /** 
@@ -163,13 +171,16 @@ void hiddenNodeDeltaJ(float* layer_outputs, float* contribution_factors, float* 
 
 
 // used for both hidden and output layer weights
+// we are itterating based on wieght updates to weights all going to the same node.
 __global__
-void weightUpdate(float* current_weights, float* deltas, float* previous_layer_input, float alpha, int num_elements){
+void weightUpdate(float* current_weights, float* delta, float* previous_layer_input, float alpha, int offset, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
+    float actual_delta = *delta;
+    
     if(tid < num_elements){
         // note previous layer input array needs to be made of equal size to the weights they affect (or needs to be made a constant and this code restructured)
         // previous layer is closer to the start of the network
-        current_weights[tid] = (current_weights[tid]) + (alpha * deltas[tid] * previous_layer_input[tid]);
+        current_weights[offset + tid] = (current_weights[offset+tid]) + (alpha * actual_delta * previous_layer_input[tid]);
     }
 }
 
@@ -373,6 +384,7 @@ int main(int argc, char** argv) {
     }
 
     #if DEBUG
+    cout<< "Current Network Weights: " << endl;
     printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
@@ -385,7 +397,7 @@ int main(int argc, char** argv) {
     );
 
     // if training:
-    float actual_values[3] = {1,0,0};
+    float actual_values[3] = {0,0,0};
     float* actual_values_d;
     CUDA_CALL(cudaMalloc((void**)&actual_values_d, 3*sizeof(float)));
     CUDA_CALL(cudaMemcpy(actual_values_d, actual_values, 3*sizeof(float), cudaMemcpyHostToDevice));
@@ -425,9 +437,9 @@ int main(int argc, char** argv) {
 
     // run delta j Kernel
     float* delta_js_l1_d; 
-    CUBLAS_CALL(cublasAlloc(hidden_layer_2_size, sizeof(float), (void**)&delta_js_l1_d));
+    CUBLAS_CALL(cublasAlloc(hidden_layer_1_size, sizeof(float), (void**)&delta_js_l1_d));
     // Calculate the detla JS for layer1
-    hiddenNodeDeltaJ<<<1, hidden_layer_2_size>>>(dev_network_output->layer1, contribsToError_1_d, delta_js_l1_d, hidden_layer_1_size);
+    hiddenNodeDeltaJ<<<1, hidden_layer_1_size>>>(dev_network_output->layer1, contribsToError_1_d, delta_js_l1_d, hidden_layer_1_size);
 
     #if DEBUG
     float* h_delta_j_1 = (float *)malloc(hidden_layer_1_size*sizeof(float));
@@ -437,16 +449,35 @@ int main(int argc, char** argv) {
     free(h_delta_j_1);
     #endif
 
+    
 
     // can now update my weight matrices. 
+    // update each column in the matrix one at a time, aka. itterate based on weights all going to the same
+    // node thus using 1 delta at a time for each node. 
+    for(int i = 0; i < hidden_layer_1_size; i++){
+        weightUpdate<<<1, input_layer_size>>>(weights1_d, &delta_js_l1_d[i], input_values, ALPHA, i * input_layer_size, input_layer_size);
+    }
+
+    for(int i = 0; i < hidden_layer_2_size; i++){
+        weightUpdate<<<1, hidden_layer_1_size>>>(weights2_d, &delta_js_l2_d[i], dev_network_output->layer1, ALPHA, i * hidden_layer_1_size, hidden_layer_1_size);
+    }
+
+    for(int i = 0; i < output_layer_size; i++){
+        weightUpdate<<<1, hidden_layer_2_size>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, ALPHA, i * hidden_layer_2_size, hidden_layer_2_size);
+    }
+
+    cudaEvent_t stop = getTime(0);
+    // cudaThreadSynchronize();
+    cudaEventSynchronize(stop);
+    cudaEventDestroy(stop);
 
 
 
-
-
-
-
-
+    #if DEBUG
+    cout<<"printing new weights"<< endl;
+    printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
+                input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+    #endif
 
 
 
