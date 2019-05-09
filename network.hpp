@@ -3,8 +3,8 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#ifndef network
-#define network
+#ifndef mrobi100_network
+#define mrobi100_network
 
 #define MAX_LAYERS 4
 
@@ -16,7 +16,6 @@ struct NetworkArch{
 } typedef NetworkArch;
 
 struct Network{
-    float* input_values; 
     float* w1; 
     float* w2; 
     float* w3; 

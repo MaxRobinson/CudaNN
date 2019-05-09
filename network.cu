@@ -330,86 +330,25 @@ float* calculateContributionsToError(int hidden_layer_size, int next_layer_size,
     return contribsToError_d;
 }
 
-/**
-* Main program
-*
-*/
-int main(int argc, char** argv) {
-
-    // read CLI args
-    InputValues iv = InputValues();
-    iv.readInputValues(argc, argv);
-    iv.validateArgs();
-    
-    NetworkArch* networkArch = readNetworkArch(&iv);
-    printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
-    
-
-    // cublasStatus status;
-    cublasInit();
+void backPropagate(NetworkArch* networkArch, Network* network, NetworkOutput* dev_network_output, float* input_values, float* actual_output_d){
     int input_layer_size = networkArch->inputLayer; 
     int hidden_layer_1_size = networkArch->layer1; 
     int hidden_layer_2_size = networkArch->layer2;
     int output_layer_size = networkArch->outputLayer; 
-
-    // wieght matrix size = input_size X hidden_layer_size
-    // Weigth matrix is stored as each array of weights is a column. 
-    // So the hieght of W (number of rows) is = to the number of inputs into the next layer's node
-    // The width of W (number of columns) is = to the number of nodes in the next layer
-    float * input_values;
-    float* weights1_d; 
-    float* weights2_d;
-    float* weights3_d; 
     
-    // cuda malloc input value space on GPU
-    CUDA_CALL(cudaMalloc((void **) &input_values, (input_layer_size) * sizeof(float)));
+    float* weights1_d = network->w1;
+    float* weights2_d = network->w2;
+    float* weights3_d = network->w3;
 
-    // // cuda malloc space for weight matrices on GPU
-    // CUDA_CALL(cudaMalloc((void **) &weights1, (input_layer_size * hidden_layer_1_size) * sizeof(float)));
-    // CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
-    // CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
-
-    CUBLAS_CALL(cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1_d));
-    CUBLAS_CALL(cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2_d));
-    CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3_d));
-
-    // init input as random for testing for now
-    if(iv.weightsFile.empty()){
-        cout << "Initializing weights with Random values" << endl;
-
-        initWeights(&input_values, input_layer_size);
-        initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
-        initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
-        initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
-    }
-
-    #if DEBUG
-    cout<< "Current Network Weights: " << endl;
-    printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
-                input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
-    #endif
-
-    // output is still on device
-    NetworkOutput* dev_network_output = forwardPass(input_values, input_layer_size,
-        weights1_d, hidden_layer_1_size,
-        weights2_d, hidden_layer_2_size,
-        weights3_d, output_layer_size
-    );
-
-    // if training:
-    float actual_values[3] = {0,0,0};
-    float* actual_values_d;
-    CUDA_CALL(cudaMalloc((void**)&actual_values_d, 3*sizeof(float)));
-    CUDA_CALL(cudaMemcpy(actual_values_d, actual_values, 3*sizeof(float), cudaMemcpyHostToDevice));
     float* delta_ks_d;
     CUBLAS_CALL(cublasAlloc(output_layer_size, sizeof(float), (void**) &delta_ks_d));
     // start backprop
     // for fun, get the squared error for the nodes
-    outputNodeDeltaK<<<1, output_layer_size>>>(dev_network_output->output, actual_values_d, delta_ks_d, output_layer_size);
+    outputNodeDeltaK<<<1, output_layer_size>>>(dev_network_output->output, actual_output_d, delta_ks_d, output_layer_size);
 
     // #if DEBUG
-    float* h_delta_k = (float *)malloc(3*sizeof(float));
-    CUDA_CALL(cudaMemcpy(h_delta_k, delta_ks_d, 3*sizeof(float), cudaMemcpyDeviceToHost));
+    float* h_delta_k = (float *)malloc(output_layer_size*sizeof(float));
+    CUDA_CALL(cudaMemcpy(h_delta_k, delta_ks_d, output_layer_size*sizeof(float), cudaMemcpyDeviceToHost));
     cout<<"output delta_ks"<< endl;
     printMat(h_delta_k, output_layer_size, 1);
     free(h_delta_k);
@@ -470,14 +409,99 @@ int main(int argc, char** argv) {
     // cudaThreadSynchronize();
     cudaEventSynchronize(stop);
     cudaEventDestroy(stop);
+}
 
+/**
+* Main program
+*
+*/
+int main(int argc, char** argv) {
 
+    // read CLI args
+    InputValues iv = InputValues();
+    iv.readInputValues(argc, argv);
+    iv.validateArgs();
+    
+    NetworkArch* networkArch = readNetworkArch(&iv);
+    printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
+    
+
+    // cublasStatus status;
+    cublasInit();
+    int input_layer_size = networkArch->inputLayer; 
+    int hidden_layer_1_size = networkArch->layer1; 
+    int hidden_layer_2_size = networkArch->layer2;
+    int output_layer_size = networkArch->outputLayer; 
+
+    // wieght matrix size = input_size X hidden_layer_size
+    // Weigth matrix is stored as each array of weights is a column. 
+    // So the hieght of W (number of rows) is = to the number of inputs into the next layer's node
+    // The width of W (number of columns) is = to the number of nodes in the next layer
+    float * input_values;
+    float* weights1_d; 
+    float* weights2_d;
+    float* weights3_d; 
+    
+    // cuda malloc input value space on GPU
+    CUDA_CALL(cudaMalloc((void **) &input_values, (input_layer_size) * sizeof(float)));
+
+    // // cuda malloc space for weight matrices on GPU
+    // CUDA_CALL(cudaMalloc((void **) &weights1, (input_layer_size * hidden_layer_1_size) * sizeof(float)));
+    // CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
+    // CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
+
+    CUBLAS_CALL(cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1_d));
+    CUBLAS_CALL(cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2_d));
+    CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3_d));
+
+    Network* network = new Network;
+    network->w1 = weights1_d; 
+    network->w2 = weights2_d; 
+    network->w3 = weights3_d; 
+
+    // init input as random for testing for now
+    if(iv.weightsFile.empty()){
+        cout << "Initializing weights with Random values" << endl;
+
+        initWeights(&input_values, input_layer_size);
+        initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
+        initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
+        initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
+    }
 
     #if DEBUG
-    cout<<"printing new weights"<< endl;
+    cout<< "Current Network Weights: " << endl;
     printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
+
+    // output is still on device
+    NetworkOutput* dev_network_output = forwardPass(input_values, input_layer_size,
+        weights1_d, hidden_layer_1_size,
+        weights2_d, hidden_layer_2_size,
+        weights3_d, output_layer_size
+    );
+
+    // if training:
+    float actual_values[3] = {0,0,0};
+    float* actual_values_d;
+    CUDA_CALL(cudaMalloc((void**)&actual_values_d, 3*sizeof(float)));
+    CUDA_CALL(cudaMemcpy(actual_values_d, actual_values, 3*sizeof(float), cudaMemcpyHostToDevice));
+    
+    // if training
+    if (true){
+        backPropagate(networkArch, network, dev_network_output, input_values, actual_values_d);
+        #if DEBUG
+        cout<<"printing new weights"<< endl;
+        printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
+                    input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+        #endif
+    }
+    
+
+
+
+    
 
 
 
