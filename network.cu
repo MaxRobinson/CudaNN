@@ -420,7 +420,25 @@ int main(int argc, char** argv) {
     free(h_delta_j);
     #endif
     
+    // get contributions to error per node for layer 1
+    float* contribsToError_1_d = calculateContributionsToError(hidden_layer_1_size, hidden_layer_2_size, weights2_d, delta_js_l2_d);
 
+    // run delta j Kernel
+    float* delta_js_l1_d; 
+    CUBLAS_CALL(cublasAlloc(hidden_layer_2_size, sizeof(float), (void**)&delta_js_l1_d));
+    // Calculate the detla JS for layer1
+    hiddenNodeDeltaJ<<<1, hidden_layer_2_size>>>(dev_network_output->layer1, contribsToError_1_d, delta_js_l1_d, hidden_layer_1_size);
+
+    #if DEBUG
+    float* h_delta_j_1 = (float *)malloc(hidden_layer_1_size*sizeof(float));
+    CUDA_CALL(cudaMemcpy(h_delta_j_1, delta_js_l1_d, hidden_layer_1_size*sizeof(float), cudaMemcpyDeviceToHost));
+    cout<<"output delta_js_1"<< endl;
+    printMat(h_delta_j_1, hidden_layer_1_size, 1);
+    free(h_delta_j_1);
+    #endif
+
+
+    // can now update my weight matrices. 
 
 
 
