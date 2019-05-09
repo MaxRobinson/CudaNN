@@ -412,13 +412,13 @@ int main(int argc, char** argv) {
     // Calculate the detla JS for layer2
     hiddenNodeDeltaJ<<<1, hidden_layer_2_size>>>(dev_network_output->layer2, contribsToError_d, delta_js_l2_d, hidden_layer_2_size);
 
-    // #if DEBUG
+    #if DEBUG
     float* h_delta_j = (float *)malloc(hidden_layer_2_size*sizeof(float));
     CUDA_CALL(cudaMemcpy(h_delta_j, delta_js_l2_d, hidden_layer_2_size*sizeof(float), cudaMemcpyDeviceToHost));
     cout<<"output delta_js"<< endl;
     printMat(h_delta_j, hidden_layer_2_size, 1);
     free(h_delta_j);
-    // #endif
+    #endif
     
 
 
