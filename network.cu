@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include <fstream>
-
+#include <vector>
 #include <string>
 #include <math.h>
 
@@ -12,7 +12,7 @@
 
 #include "network.hpp"
 
-#define DEBUG false
+#define DEBUG true
 #define index(i,j,ld) (((j)*(ld))+(i))
 
 using namespace std;
@@ -150,7 +150,7 @@ void outputNodeDeltaK(float* predicted_values, float* actual_values, float* res_
 
 // delta_j output output size will be equal to size of the current layer 
 __global__ 
-void hiddenLayerError(float* layer_outputs, float* contribution_factors, float* res_layer_delta_js, int num_elements){
+void hiddenNodeDeltaJ(float* layer_outputs, float* contribution_factors, float* res_layer_delta_js, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements){
         float node_output = layer_outputs[tid];
@@ -292,6 +292,31 @@ NetworkOutput* forwardPass(float* input_values, int input_size,
 }
 
 
+// float* calculateContributionsToError(int hidden_layer_size, int next_layer_size, float* weight_matrix_d, float* delta_ks_d){
+//     // get contributions to error per node for layer 2
+//     float* contributionsToError = (float*) malloc(hidden_layer_size*sizeof(float)); 
+//     for(int j = 0; j < hidden_layer_size; j++){
+//         // i is the index into the node the in layer 2 
+//         // construct the w_jk vector
+//         int incrx =  (hidden_layer_size);
+//         // this is a horizontal (row) slice out of our column based weight matrix 
+//         // this gives us all the weights from a single node to the other nodes it's attached to
+//         // i.e. from node j to node k
+//         // contribution error = sum(delta_k * w_jk) 
+//         // provides the amount this node contributed to the error in node outputs after it.
+//         float contributionToError = cublasSdot(next_layer_size, &weight_matrix_d[j], incrx , delta_ks_d, 1);
+//         cout<<"Contribution to Error: " << contributionToError << endl;
+//         contributionsToError[j] = contributionToError;
+//     }
+//     // move contributions to error to device so that we can run our delta_j kernel
+//     float* contribsToError_d; 
+//     CUBLAS_CALL(cublasAlloc(hidden_layer_2_size, sizeof(float), (void**) &contribsToError_d));
+//     CUDA_CALL(cudaMemcpy(contribsToError_d, contributionsToError, hidden_layer_2_size*sizeof(float),cudaMemcpyHostToDevice));
+//     free(contributionsToError);
+
+//     return contribsToError_d;
+// }
+
 /**
 * Main program
 *
@@ -307,7 +332,7 @@ int main(int argc, char** argv) {
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
     
 
-    cublasStatus status;
+    // cublasStatus status;
     cublasInit();
     int input_layer_size = networkArch->inputLayer; 
     int hidden_layer_1_size = networkArch->layer1; 
@@ -357,10 +382,59 @@ int main(int argc, char** argv) {
         weights3_d, output_layer_size
     );
 
+    // if training:
+    float actual_values[3] = {1,0,0};
+    float* actual_values_d;
+    CUDA_CALL(cudaMalloc((void**)&actual_values_d, 3*sizeof(float)));
+    CUDA_CALL(cudaMemcpy(actual_values_d, actual_values, 3*sizeof(float), cudaMemcpyHostToDevice));
+    float* delta_ks_d;
+    CUBLAS_CALL(cublasAlloc(output_layer_size, sizeof(float), (void**) &delta_ks_d));
     // start backprop
-    
     // for fun, get the squared error for the nodes
-    // squaredError<<<1, 
+    outputNodeDeltaK<<<1, output_layer_size>>>(dev_network_output->output, actual_values_d, delta_ks_d, output_layer_size);
+
+    // #if DEBUG
+    float* h_delta_k = (float *)malloc(3*sizeof(float));
+    CUDA_CALL(cudaMemcpy(h_delta_k, delta_ks_d, 3*sizeof(float), cudaMemcpyDeviceToHost));
+    cout<<"output delta_ks"<< endl;
+    printMat(h_delta_k, output_layer_size, 1);
+    free(h_delta_k);
+    // #endif
+
+    // get contributions to error per node for layer 2
+    float* contributionsToError = (float*) malloc(hidden_layer_2_size*sizeof(float)); 
+    for(int j = 0; j < hidden_layer_2_size; j++){
+        // i is the index into the node the in layer 2 
+        // construct the w_jk vector
+        int incrx =  (hidden_layer_2_size);
+        // this is a horizontal (row) slice out of our column based weight matrix 
+        // this gives us all the weights from a single node to the other nodes it's attached to
+        // i.e. from node j to node k
+        // contribution error = sum(delta_k * w_jk) 
+        // provides the amount this node contributed to the error in node outputs after it.
+        float contributionToError = cublasSdot(output_layer_size, &weights3_d[j], incrx , delta_ks_d, 1);
+        cout<<"Contribution to Error: " << contributionToError << endl;
+        contributionsToError[j] = contributionToError;
+    }
+    // move contributions to error to device so that we can run our delta_j kernel
+    float* contribsToError_d; 
+    CUBLAS_CALL(cublasAlloc(hidden_layer_2_size, sizeof(float), (void**) &contribsToError_d));
+    CUDA_CALL(cudaMemcpy(contribsToError_d, contributionsToError, hidden_layer_2_size*sizeof(float),cudaMemcpyHostToDevice));
+    free(contributionsToError);
+
+    // run delta j Kernel
+    float* delta_js_l2_d; 
+    CUBLAS_CALL(cublasAlloc(hidden_layer_2_size, sizeof(float), (void**)&delta_js_l2_d));
+    // Calculate the detla JS for layer2
+    hiddenNodeDeltaJ<<<1, hidden_layer_2_size>>>(dev_network_output->layer2, contribsToError_d, delta_js_l2_d, hidden_layer_2_size);
+
+    // #if DEBUG
+    float* h_delta_j = (float *)malloc(hidden_layer_2_size*sizeof(float));
+    CUDA_CALL(cudaMemcpy(h_delta_j, delta_js_l2_d, hidden_layer_2_size*sizeof(float), cudaMemcpyDeviceToHost));
+    cout<<"output delta_js"<< endl;
+    printMat(h_delta_j, hidden_layer_2_size, 1);
+    free(h_delta_j);
+    // #endif
     
 
 
