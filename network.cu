@@ -111,6 +111,15 @@ __host__ int cublasCall(cublasStatus status, const char* file, int line) {
 }
 #define CUBLAS_CALL(value) cublasCall( value, __FILE__, __LINE__)
 
+
+__global__ void addConstant(float* input, float constant, int num_elements){
+    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
+    if(tid < num_elements)
+	{
+        input[tid] = input[tid] + constant;
+    }
+}
+
 /*
 * Kernel 
 * apply sigmoid function to a value of arrays
@@ -150,7 +159,7 @@ void outputNodeDeltaK(float* predicted_values, float* actual_values, float* res_
     if(tid < num_elements){
         float predicted_value = predicted_values[tid];
         if(predicted_value == 1){
-            predicted_value -= .000001;
+            predicted_value -= .0001;
             // printf("%f", predicted_value);
         }
         float actual_value = actual_values[tid]; 
@@ -171,7 +180,7 @@ void hiddenNodeDeltaJ(float* layer_outputs, float* contribution_factors, float* 
     if(tid < num_elements){
         float node_output = layer_outputs[tid];
         if(node_output == 1){
-            node_output -= .000001;
+            node_output -= .0001;
             // printf("%f", node_output);
         }
         float contribution_factor = contribution_factors[tid];
@@ -236,6 +245,8 @@ void initWeights(float ** d_array, int arraySize){
     /* This code generates floats on the device thus is calling a kernel
         to perform this operation */
     CURAND_CALL(curandGenerateUniform(gen, *d_array, arraySize));
+
+    addConstant<<<1, arraySize>>>(*d_array, -0.5, arraySize);
 }
 
 /* 
@@ -457,7 +468,7 @@ int main(int argc, char** argv) {
     InputValues iv = InputValues();
     iv.readInputValues(argc, argv);
     iv.validateArgs();
-    int epochs = 100;
+    int MAX_EPOCHS = 2000;
     
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
@@ -553,9 +564,13 @@ int main(int argc, char** argv) {
     float* ones_d;
     CUDA_CALL(cudaMalloc((void**)&ones_d, output_layer_size*sizeof(float)));
     CUDA_CALL(cudaMemcpy(ones_d, ones, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+
+
     float previous_average_error = 1000000;
-    float average_error = 1000000;
-    for(int j = 0; j < epochs; j++){
+    float average_error = 100000;
+    int itter = 0;
+    // while( abs(average_error - previous_average_error) > .000001 && abs(average_error) < abs(previous_average_error) && itter < MAX_EPOCHS ){
+    while(itter < MAX_EPOCHS ){        
         previous_average_error = average_error;
         average_error = 0;
         for(int i = 0; i < trainingData_h.size(); i++){
@@ -606,12 +621,10 @@ int main(int argc, char** argv) {
             cublasFree(dev_network_output->output);
         }
         average_error = average_error/trainingData_h.size();
-        printf("Average Error for Epoch #%d: %f \n", j, average_error);
-        // cout << "FINISHED EPOCH" << endl;
-        // cout << "FINISHED EPOCH" << endl;
-        // cout << "FINISHED EPOCH" << endl;
-        // cout << "FINISHED EPOCH" << endl;
+        printf("Average Error for Epoch #%d: %f \n", itter, average_error);
+        itter++;
     }
+    cout << "Finished Training" << endl;
 
 
 
