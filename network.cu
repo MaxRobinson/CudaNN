@@ -13,6 +13,8 @@
 #include "network.hpp"
 
 #define DEBUG false
+#define DEBUG_OUTPUT false
+#define DEBUG_DELTA_K false
 #define DEBUGNET false
 #define index(i,j,ld) (((j)*(ld))+(i))
 #define ALPHA .1
@@ -31,9 +33,9 @@ void printMat(float*P,int uWP,int uHP){
         if(i != 0){
             printf("\n");
         }
-        for(j=0;j<uWP;j++)
+        for(j=0;j<uWP;j++){
             printf("%f ",P[index(i,j,uHP)]);
-            // cout << P[index(i,j,uHP)];
+        }
     }
     printf("\n");
 }
@@ -356,13 +358,13 @@ void backPropagate(NetworkArch* networkArch, Network* network, NetworkOutput* de
     // for fun, get the squared error for the nodes
     outputNodeDeltaK<<<1, output_layer_size>>>(dev_network_output->output, actual_output_d, delta_ks_d, output_layer_size);
 
-    // #if DEBUG
+    #if DEBUG_DELTA_K
     float* h_delta_k = (float *)malloc(output_layer_size*sizeof(float));
     CUDA_CALL(cudaMemcpy(h_delta_k, delta_ks_d, output_layer_size*sizeof(float), cudaMemcpyDeviceToHost));
     cout<<"output delta_ks"<< endl;
     printMat(h_delta_k, output_layer_size, 1);
     free(h_delta_k);
-    // #endif
+    #endif
 
     // get contributions to error per node for layer 2   
     float* contribsToError_d = calculateContributionsToError(hidden_layer_2_size, output_layer_size, weights3_d, delta_ks_d);
@@ -540,11 +542,24 @@ int main(int argc, char** argv) {
     // run the network for all the data as if training
     float* gt_d;
     CUDA_CALL(cudaMalloc((void**)&gt_d, output_layer_size*sizeof(float)));
-    for(int i = 0; i < 1; i++){
-
-        for(int i = 0; i < 1; i++){
+    float* error_array_d;
+    CUDA_CALL(cudaMalloc((void**)&error_array_d, output_layer_size*sizeof(float)));
+    
+    // used to calculate squared error
+    float* ones = (float*) malloc(output_layer_size*sizeof(float));
+    for(int i = 0; i < output_layer_size; i++){
+        ones[i] = i;
+    }
+    float* ones_d;
+    CUDA_CALL(cudaMalloc((void**)&ones_d, output_layer_size*sizeof(float)));
+    CUDA_CALL(cudaMemcpy(ones_d, ones, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+    float previous_average_error = 1000000;
+    float average_error = 1000000;
+    for(int j = 0; j < epochs; j++){
+        previous_average_error = average_error;
+        average_error = 0;
+        for(int i = 0; i < trainingData_h.size(); i++){
             // train the network for the entire data
-
             // put input on the GPU
             CUDA_CALL(cudaMemcpy(input_values_d, trainingData_h[i], input_layer_size*sizeof(float), cudaMemcpyHostToDevice));
             
@@ -556,11 +571,7 @@ int main(int argc, char** argv) {
                 weights3_d, output_layer_size
             );
 
-            CUDA_CALL(cudaMemcpy(gt_d, gtData_h[i], output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
-
-            
-            
-            #if DEBUG
+            #if DEBUG_OUTPUT
             // print network output
             float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
             CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));
@@ -570,6 +581,15 @@ int main(int argc, char** argv) {
             free(h_output);
             #endif
 
+        
+            // copy gt to device to use for backprop
+            CUDA_CALL(cudaMemcpy(gt_d, gtData_h[i], output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+
+
+            // calculate squared error
+            squaredError<<<1, output_layer_size>>>(dev_network_output->output, gt_d, error_array_d, input_layer_size);
+            float squaredError = cublasSdot(output_layer_size, error_array_d, 1 , ones_d, 1);
+            average_error += squaredError;
 
             // backProp to train the network
             backPropagate(networkArch, network, dev_network_output, input_values_d, gt_d);
@@ -585,6 +605,12 @@ int main(int argc, char** argv) {
             cublasFree(dev_network_output->layer2);
             cublasFree(dev_network_output->output);
         }
+        average_error = average_error/trainingData_h.size();
+        printf("Average Error for Epoch #%d: %f \n", j, average_error);
+        // cout << "FINISHED EPOCH" << endl;
+        // cout << "FINISHED EPOCH" << endl;
+        // cout << "FINISHED EPOCH" << endl;
+        // cout << "FINISHED EPOCH" << endl;
     }
 
 
