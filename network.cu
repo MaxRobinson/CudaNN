@@ -537,7 +537,6 @@ int main(int argc, char** argv) {
     if(iv.weightsFile.empty()){
         cout << "Initializing weights with Random values" << endl;
 
-        initWeights(&input_values_d, input_layer_size);
         initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
         initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
         initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
