@@ -1,3 +1,3 @@
 #! /bin/bash
 
-./network.exe --archFile arch --training hold --groundTruth hold --validation hold --evaluation --outputFile hold
+./network.exe --archFile arch --training celebrityFacesRepsTrainShuffled.txt --groundTruth celebrityFacesGTTrainShuffled.txt --evaluation hold --outputFile weightsTest.txt

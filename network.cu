@@ -421,15 +421,32 @@ int main(int argc, char** argv) {
     InputValues iv = InputValues();
     iv.readInputValues(argc, argv);
     iv.validateArgs();
+    int epochs = 100;
     
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
     
+    Network* network_h;
     // if weights are defined read them in
+    if(iv.usePredefWeights){
+        network_h = readWeightsFile(iv.weightsFile);
+    }
 
     // if training read training data and gt
-
-    // if validation set supplied read in
+    vector<float*> trainingData_h;
+    vector<float*> gtData_h;
+    if(iv.training){
+        // read training data
+        readData(iv.trainingFile, &trainingData_h, networkArch->inputLayer);
+        // read GT data
+        readData(iv.gtFile, &gtData_h, networkArch->outputLayer);
+    }
+    #if DEBUG
+    cout << "Size of training Data: " << trainingData_h.size() << endl;
+    cout << "Size value of GT Data: " << trainingData_h.size() << endl;
+    printf("First value of training Data: %f \n", trainingData_h[0][0]);
+    printf("First value of GT Data: %f \n", trainingData_h[0][0]);
+    #endif 
 
     // if evaluation set supplied read in
 

@@ -3,6 +3,8 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <sstream>
+#include <vector> 
 #ifndef mrobi100_network
 #define mrobi100_network
 
@@ -141,5 +143,73 @@ NetworkArch* readNetworkArch(InputValues* iv){
     return networkArch;
 };
 
+Network* readWeightsFile(string weightsFile){
+    Network* network_h = new Network; 
+    ifstream f (weightsFile);
+    if (!f.good()){
+        cout<< "Bad Weights File" << endl;
+        exit(EXIT_FAILURE);
+    }  
+
+    // read the three layers of weights
+    for(int i = 0; i < 3; i++){
+        vector<float> values;
+        string line;
+        getline(f, line);
+        stringstream ss(line);
+        while (ss.good()){
+            string floatValue;
+            getline(ss, floatValue, ',');
+            values.push_back(std::stof(floatValue));
+        }
+        switch (i)
+        {
+            case 0:
+                network_h->w1 = values.data();
+                break;
+            case 1:
+                network_h->w2 = values.data();
+                break;
+            case 2:
+                network_h->w3 = values.data();
+                break;
+            default:
+                break;
+        }
+    }
+
+    return network_h;
+}
+
+
+void readData(string filePath, vector<float*>* data, int elements_per_line){
+    ifstream f (filePath);
+    if (!f.good()){
+        cout<< "Bad File" << endl;
+        exit(EXIT_FAILURE);
+    }  
+
+    // read data in
+    while(f.good()){
+
+        float* values = (float*) malloc(elements_per_line*sizeof(float));
+        
+        string line;
+        getline(f, line);
+        
+        stringstream ss(line);
+        for(int i = 0; i < elements_per_line; i++){
+            string floatValue;
+            getline(ss, floatValue, ',');
+            // cout << floatValue << endl;
+            if(!floatValue.compare("") || !floatValue.compare("\n")){
+                free(values);
+                break;
+            }
+            values[i] = std::stof(floatValue);
+        }
+        (*data).push_back(values);
+    }
+}
 
 #endif
