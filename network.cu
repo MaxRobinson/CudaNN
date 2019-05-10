@@ -425,6 +425,16 @@ int main(int argc, char** argv) {
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
     
+    // if weights are defined read them in
+
+    // if training read training data and gt
+
+    // if validation set supplied read in
+
+    // if evaluation set supplied read in
+
+    // set outputfile
+
 
     // cublasStatus status;
     cublasInit();
@@ -437,13 +447,13 @@ int main(int argc, char** argv) {
     // Weigth matrix is stored as each array of weights is a column. 
     // So the hieght of W (number of rows) is = to the number of inputs into the next layer's node
     // The width of W (number of columns) is = to the number of nodes in the next layer
-    float * input_values;
+    float * input_values_d;
     float* weights1_d; 
     float* weights2_d;
     float* weights3_d; 
     
     // cuda malloc input value space on GPU
-    CUDA_CALL(cudaMalloc((void **) &input_values, (input_layer_size) * sizeof(float)));
+    CUDA_CALL(cudaMalloc((void **) &input_values_d, (input_layer_size) * sizeof(float)));
 
     // // cuda malloc space for weight matrices on GPU
     // CUDA_CALL(cudaMalloc((void **) &weights1, (input_layer_size * hidden_layer_1_size) * sizeof(float)));
@@ -463,7 +473,7 @@ int main(int argc, char** argv) {
     if(iv.weightsFile.empty()){
         cout << "Initializing weights with Random values" << endl;
 
-        initWeights(&input_values, input_layer_size);
+        initWeights(&input_values_d, input_layer_size);
         initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
         initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
         initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
@@ -471,12 +481,12 @@ int main(int argc, char** argv) {
 
     #if DEBUG
     cout<< "Current Network Weights: " << endl;
-    printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
+    printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
 
     // output is still on device
-    NetworkOutput* dev_network_output = forwardPass(input_values, input_layer_size,
+    NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
         weights1_d, hidden_layer_1_size,
         weights2_d, hidden_layer_2_size,
         weights3_d, output_layer_size
@@ -490,10 +500,10 @@ int main(int argc, char** argv) {
     
     // if training
     if (true){
-        backPropagate(networkArch, network, dev_network_output, input_values, actual_values_d);
+        backPropagate(networkArch, network, dev_network_output, input_values_d, actual_values_d);
         #if DEBUG
         cout<<"printing new weights"<< endl;
-        printNetworkFromDev(input_values, weights1_d, weights2_d, weights3_d, 
+        printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
         #endif
     }
@@ -514,7 +524,7 @@ int main(int argc, char** argv) {
     printMat(h_output, output_layer_size, 1);
 
     free(h_output);
-    cublasFree(input_values);
+    cublasFree(input_values_d);
     cublasFree(weights1_d);
     cublasFree(weights2_d);
     cublasFree(weights3_d);

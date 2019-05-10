@@ -32,15 +32,22 @@ using namespace std;
 class InputValues {
     public: 
         bool useValidationSet = false;
+        bool training = false;
+        bool gt = false;
+        bool usePredefWeights = true;
+        bool performEvalutation = false;
         std::string archFile;
         std::string weightsFile; 
         std::string trainingFile; 
+        std::string gtFile;
         std::string validationFile;
         std::string evaluationFile; 
         std::string outputFile; 
         
     
         void readInputValues(int argc, char** argv){
+            //check for no inputs, and output help message if so.
+            checkHelp(argc);
             for(int i = 0; i < argc; i++){
 
                 std::string input(argv[i]);
@@ -56,6 +63,10 @@ class InputValues {
                 else if (!input.compare("--training"))
                 {
                     this->trainingFile = std::string(argv[++i]);
+                }
+                else if (!input.compare("--groundTruth"))
+                {
+                    this->gtFile = std::string(argv[++i]);
                 }
                 else if (!input.compare("--validation"))
                 {
@@ -77,8 +88,26 @@ class InputValues {
                 cout << "No arch file specified, Exiting" << endl;
                 exit(EXIT_FAILURE);
             }
-            if(!validationFile.empty()){
-                useValidationSet = true;
+            usePredefWeights = !weightsFile.empty();
+            training = !trainingFile.empty();
+            gt = !gtFile.empty();
+            performEvalutation = !evaluationFile.empty();
+            useValidationSet = !validationFile.empty();
+
+            if(training && !gt || gt && !training){
+                cout << "Must provide both training data and associated ground truth" << endl;
+                exit(EXIT_FAILURE);
+            }
+
+            if(!training && !performEvalutation){
+                cout << "User must specify if training or performing evaluation or both" << endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        void checkHelp(int argc){
+            if(argc <= 1){
+                cout << "Usage is: ./network.exe --archFile <> --weights <optional> --training <trainingDataFile> --groundTruth <gtFile> --validation <dataFile> --evaluation <dataFileForEval> --output <networkWeightSaveFile>" << endl;
             }
         }
 
