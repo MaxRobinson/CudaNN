@@ -12,7 +12,8 @@
 
 #include "network.hpp"
 
-#define DEBUG true
+#define DEBUG false
+#define DEBUGNET false
 #define index(i,j,ld) (((j)*(ld))+(i))
 #define ALPHA .1
 
@@ -32,6 +33,7 @@ void printMat(float*P,int uWP,int uHP){
         }
         for(j=0;j<uWP;j++)
             printf("%f ",P[index(i,j,uHP)]);
+            // cout << P[index(i,j,uHP)];
     }
     printf("\n");
 }
@@ -145,6 +147,10 @@ void outputNodeDeltaK(float* predicted_values, float* actual_values, float* res_
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements){
         float predicted_value = predicted_values[tid];
+        if(predicted_value == 1){
+            predicted_value -= .000001;
+            // printf("%f", predicted_value);
+        }
         float actual_value = actual_values[tid]; 
         float delta_k =  predicted_value * (1 - predicted_value) * (actual_value - predicted_value);
         res_delta_k_list[tid] = delta_k;
@@ -162,6 +168,10 @@ void hiddenNodeDeltaJ(float* layer_outputs, float* contribution_factors, float* 
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements){
         float node_output = layer_outputs[tid];
+        if(node_output == 1){
+            node_output -= .000001;
+            // printf("%f", node_output);
+        }
         float contribution_factor = contribution_factors[tid];
         float delta_j = (1 - node_output) * node_output * contribution_factor;
         res_layer_delta_js[tid] = delta_j;
@@ -411,6 +421,30 @@ void backPropagate(NetworkArch* networkArch, Network* network, NetworkOutput* de
     cudaEventDestroy(stop);
 }
 
+// void trainNetwork(){
+//     // output is still on device
+//     NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
+//         weights1_d, hidden_layer_1_size,
+//         weights2_d, hidden_layer_2_size,
+//         weights3_d, output_layer_size
+//     );
+
+//     // if training:
+//     float* actual_values_d;
+//     CUDA_CALL(cudaMalloc((void**)&actual_values_d, output_layer_size*sizeof(float)));
+//     CUDA_CALL(cudaMemcpy(actual_values_d, <<<<>>>>>, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+    
+//     // if training
+//     if(iv.training){
+//         backPropagate(networkArch, network, dev_network_output, input_values_d, actual_values_d);
+//         #if DEBUG
+//         cout<<"printing new weights"<< endl;
+//         printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
+//                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+//         #endif
+//     }
+// }
+
 /**
 * Main program
 *
@@ -496,11 +530,64 @@ int main(int argc, char** argv) {
         initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
     }
 
-    #if DEBUG
+    #if DEBUGNET
     cout<< "Current Network Weights: " << endl;
     printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
+
+
+    // run the network for all the data as if training
+    // float* gt_d;
+    // CUDA_CALL(cudaMalloc((void**)&gt_d, output_layer_size*sizeof(float)));
+    // for(int i = 0; i < 1; i++){
+
+    //     for(int i = 0; i < 1; i++){
+    //         // train the network for the entire data
+
+    //         // put input on the GPU
+    //         CUDA_CALL(cudaMemcpy(input_values_d, trainingData_h[i], input_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+            
+    //         // get network output
+    //         // output is still on device
+    //         NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
+    //             weights1_d, hidden_layer_1_size,
+    //             weights2_d, hidden_layer_2_size,
+    //             weights3_d, output_layer_size
+    //         );
+
+    //         CUDA_CALL(cudaMemcpy(gt_d, gtData_h[i], output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+
+            
+            
+    //         #if DEBUG
+    //         // print network output
+    //         float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
+    //         CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));
+
+    //         printf("Network output: ");
+    //         printMat(h_output, output_layer_size, 1);
+    //         free(h_output);
+    //         #endif
+
+
+    //         // backProp to train the network
+    //         backPropagate(networkArch, network, dev_network_output, input_values_d, gt_d);
+            
+    //         #if DEBUGNET
+    //         cout<<"printing new weights"<< endl;
+    //         printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
+    //                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+    //         #endif
+    //         cudaThreadSynchronize();
+
+    //         cublasFree(dev_network_output->layer1);
+    //         cublasFree(dev_network_output->layer2);
+    //         cublasFree(dev_network_output->output);
+    //     }
+    // }
+
+
 
     // output is still on device
     NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
@@ -510,15 +597,15 @@ int main(int argc, char** argv) {
     );
 
     // if training:
-    float actual_values[3] = {0,0,0};
+    float actual_value_h[3] = {1,0,0};
     float* actual_values_d;
-    CUDA_CALL(cudaMalloc((void**)&actual_values_d, 3*sizeof(float)));
-    CUDA_CALL(cudaMemcpy(actual_values_d, actual_values, 3*sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CALL(cudaMalloc((void**)&actual_values_d, output_layer_size*sizeof(float)));
+    CUDA_CALL(cudaMemcpy(actual_values_d, actual_value_h, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
     
     // if training
-    if (true){
+    if(iv.training){
         backPropagate(networkArch, network, dev_network_output, input_values_d, actual_values_d);
-        #if DEBUG
+        #if DEBUGNET
         cout<<"printing new weights"<< endl;
         printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
@@ -539,8 +626,8 @@ int main(int argc, char** argv) {
 
     printf("Network output: ");
     printMat(h_output, output_layer_size, 1);
-
     free(h_output);
+
     cublasFree(input_values_d);
     cublasFree(weights1_d);
     cublasFree(weights2_d);
