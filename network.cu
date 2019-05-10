@@ -628,53 +628,12 @@ int main(int argc, char** argv) {
 
 
 
-    // output is still on device
-    // NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
-    //     weights1_d, hidden_layer_1_size,
-    //     weights2_d, hidden_layer_2_size,
-    //     weights3_d, output_layer_size
-    // );
-
-    // // if training:
-    // float actual_value_h[3] = {1,0,0};
-    // float* actual_values_d;
-    // CUDA_CALL(cudaMalloc((void**)&actual_values_d, output_layer_size*sizeof(float)));
-    // CUDA_CALL(cudaMemcpy(actual_values_d, actual_value_h, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
-    
-    // // if training
-    // if(iv.training){
-    //     backPropagate(networkArch, network, dev_network_output, input_values_d, actual_values_d);
-    //     #if DEBUGNET
-    //     cout<<"printing new weights"<< endl;
-    //     printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
-    //                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
-    //     #endif
-    // }
-    
-
-
-
-    
-
-
-
-
-
-    // float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
-    // CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));
-
-    // printf("Network output: ");
-    // printMat(h_output, output_layer_size, 1);
-    // free(h_output);
+    //TODO make sure all memory gets freed
 
     cublasFree(input_values_d);
     cublasFree(weights1_d);
     cublasFree(weights2_d);
     cublasFree(weights3_d);
-
-    // cublasFree(dev_network_output->layer1);
-    // cublasFree(dev_network_output->layer2);
-    // cublasFree(dev_network_output->output);
 
     cublasShutdown();
     return true;
