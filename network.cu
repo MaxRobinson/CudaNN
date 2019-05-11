@@ -544,18 +544,21 @@ int main(int argc, char** argv) {
         initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
     }
     else {
-        Network* network_h;
+        Network* network_h = new Network;
         // if weights are defined read them in
-        if(iv.usePredefWeights){
-            cout << "reading in weights" << endl;
-            network_h = readWeightsFile(iv.weightsFile);
-        }
+        cout << "reading in weights" << endl;
+        readWeightsFile(iv.weightsFile, &network_h, networkArch);
+        cout << "LAYER 3: " << network_h->w3[0] << endl;
         CUDA_CALL(cudaMemcpy(weights1_d, network_h->w1, input_layer_size * hidden_layer_1_size *sizeof(float), cudaMemcpyHostToDevice));
         CUDA_CALL(cudaMemcpy(weights2_d, network_h->w2, hidden_layer_1_size * hidden_layer_2_size *sizeof(float), cudaMemcpyHostToDevice));
         CUDA_CALL(cudaMemcpy(weights3_d, network_h->w3, hidden_layer_2_size * output_layer_size *sizeof(float), cudaMemcpyHostToDevice));
+        // cublasSetMatrix(input_layer_size, hidden_layer_1_size, sizeof(float), network_h->w1, input_layer_size, weights1_d, input_layer_size);
+        // cublasSetMatrix(hidden_layer_1_size, hidden_layer_2_size, sizeof(float), network_h->w2, hidden_layer_1_size, weights2_d, hidden_layer_1_size);
+        // cublasSetMatrix(hidden_layer_2_size, output_layer_size, sizeof(float), network_h->w3, hidden_layer_2_size, weights3_d, hidden_layer_2_size);
+        cudaThreadSynchronize();
 
         // data allocated by vectors is released;
-        network_h = NULL;
+        delete network_h;
     }
 
     #if DEBUGNET

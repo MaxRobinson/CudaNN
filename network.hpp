@@ -164,8 +164,9 @@ NetworkArch* readNetworkArch(InputValues* iv){
     return networkArch;
 };
 
-Network* readWeightsFile(string weightsFile){
-    Network* network_h = new Network; 
+void readWeightsFile(string weightsFile, Network** network_ref, NetworkArch* networkArch){
+    // Network* network_h = new Network; 
+    Network* network_h = *network_ref;
     ifstream f (weightsFile);
     if (!f.good()){
         cout<< "Bad Weights File" << endl;
@@ -173,33 +174,44 @@ Network* readWeightsFile(string weightsFile){
     }  
 
     // read the three layers of weights
-    for(int i = 0; i < 3; i++){
-        vector<float> values;
-        string line;
-        getline(f, line);
-        stringstream ss(line);
-        while (ss.good()){
-            string floatValue;
-            getline(ss, floatValue, ',');
-            values.push_back(std::stof(floatValue));
-        }
-        switch (i)
-        {
-            case 0:
-                network_h->w1 = values.data();
-                break;
-            case 1:
-                network_h->w2 = values.data();
-                break;
-            case 2:
-                network_h->w3 = values.data();
-                break;
-            default:
-                break;
-        }
+    
+    float* w1 = (float*) malloc(networkArch->inputLayer*networkArch->layer1 *sizeof(float));
+    float* w2 = (float*) malloc(networkArch->layer1 * networkArch->layer2 *sizeof(float));
+    float* w3 = (float*) malloc(networkArch->layer2*networkArch->outputLayer *sizeof(float));
+    
+    string line1;
+    string line2;
+    string line3;
+    getline(f, line1);
+    getline(f, line2);
+    getline(f, line3);
+    
+    stringstream ss(line1);
+    for(int i = 0; i < networkArch->inputLayer*networkArch->layer1; i++){
+        string floatValue;
+        getline(ss, floatValue, ',');
+        w1[i] = std::stof(floatValue);
     }
+
+    stringstream ss1(line2);
+    for(int i = 0; i < networkArch->layer1 * networkArch->layer2 ; i++){
+        string floatValue;
+        getline(ss1, floatValue, ',');
+        w2[i] = std::stof(floatValue);
+    }
+
+    stringstream ss2(line3);
+    for(int i = 0; i < networkArch->layer2*networkArch->outputLayer; i++){
+        string floatValue;
+        getline(ss2, floatValue, ',');
+        w3[i] = std::stof(floatValue);
+    }
+
+    network_h->w1 = w1;
+    network_h->w2 = w2;
+    network_h->w3 = w3;
+
     f.close();
-    return network_h;
 }
 
 
