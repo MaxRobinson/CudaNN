@@ -504,7 +504,7 @@ int main(int argc, char** argv) {
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
 
-    // determine the number of blocks
+    // determine the number of blocks for maximum paralizability
     vector<float> layerSizes;
     layerSizes.push_back(networkArch->inputLayer);
     layerSizes.push_back(networkArch->layer1);
@@ -515,7 +515,7 @@ int main(int argc, char** argv) {
     if(((int)totalThreads % blockSize) != 0){
         numBlocks++;
     }
-    printf("Num Blocks: %d \n", numBlocks);
+    printf("Num blocks used: %d \n", numBlocks);
     #pragma endregion
 
     #pragma region // Init the network on device
