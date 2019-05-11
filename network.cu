@@ -485,36 +485,21 @@ void freeFloatVector(vector<float*> data_h){
 */
 int main(int argc, char** argv) {
 
-    // read CLI args
+    #pragma region // read in CLI args
+
     InputValues iv = InputValues();
     iv.readInputValues(argc, argv);
-    iv.validateArgs();
+    iv.validateArgs(); // will stop execution here if not valid args
+
     int epochs = iv.epochs;
     float alpha = iv.alpha;
     
+    // read in network architecture and always display to CLI
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
+    #pragma endregion
 
-    // if training read training data and gt
-    vector<float*> trainingData_h;
-    vector<float*> gtData_h;
-    if(iv.training){
-        // read training data
-        readData(iv.trainingFile, &trainingData_h, networkArch->inputLayer);
-        // read GT data
-        readData(iv.gtFile, &gtData_h, networkArch->outputLayer);
-    }
-    #if DEBUG
-    cout << "Size of training Data: " << trainingData_h.size() << endl;
-    cout << "Size value of GT Data: " << trainingData_h.size() << endl;
-    printf("First value of training Data: %f \n", trainingData_h[0][0]);
-    printf("First value of GT Data: %f \n", trainingData_h[0][0]);
-    #endif 
-
-    // if evaluation set supplied read in
-
-
-    // cublasStatus status;
+    #pragma region // Init the network on device
     cublasInit();
     int input_layer_size = networkArch->inputLayer; 
     int hidden_layer_1_size = networkArch->layer1; 
@@ -573,8 +558,24 @@ int main(int argc, char** argv) {
     printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
+    #pragma endregion
 
+    #pragma region // Train the network if training option
     if(iv.training){
+        // if training read training data and gt
+        vector<float*> trainingData_h;
+        vector<float*> gtData_h;
+        // read training data
+        readData(iv.trainingFile, &trainingData_h, networkArch->inputLayer);
+        // read GT data
+        readData(iv.gtFile, &gtData_h, networkArch->outputLayer);
+
+        #if DEBUG
+        cout << "Size of training Data: " << trainingData_h.size() << endl;
+        cout << "Size value of GT Data: " << trainingData_h.size() << endl;
+        printf("First value of training Data: %f \n", trainingData_h[0][0]);
+        printf("First value of GT Data: %f \n", trainingData_h[0][0]);
+        #endif 
         // run the network for all the data as if training
         float* gt_d;
         CUDA_CALL(cudaMalloc((void**)&gt_d, output_layer_size*sizeof(float)));
@@ -659,7 +660,9 @@ int main(int argc, char** argv) {
         CUDA_CALL(cudaFree(gt_d));
         CUDA_CALL(cudaFree(error_array_d));
     }
+    #pragma endregion
 
+    #pragma region // Evaluate the network if evaluation option
     if(iv.performEvalutation){
         cout << "Starting Eval" << endl;
         vector<float*> evaluationData_h;
@@ -690,10 +693,11 @@ int main(int argc, char** argv) {
         freeFloatVector(evaluationData_h);
         freeFloatVector(results_h);
     }
+    #pragma endregion
 
-
-
-    // output the weight file
+    #pragma region // Output the network 
+    // output the weight file always
+    // if no file specified, make one up
     if(iv.outputFile.empty()){
         time_t t = time(NULL);
         stringstream ss; 
@@ -705,15 +709,18 @@ int main(int argc, char** argv) {
     Network* network_h = getNetworkFromDevice(input_values_d, weights1_d, weights2_d, weights3_d, 
                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     writeWeights(iv.outputFile, networkArch, network_h);
+    #pragma endregion 
 
+    #pragma region // clean up stuff left
     //TODO make sure all memory gets freed
-
     cublasFree(input_values_d);
     cublasFree(weights1_d);
     cublasFree(weights2_d);
     cublasFree(weights3_d);
 
     cublasShutdown();
+    #pragma endregion
+
     return true;
 }
 
