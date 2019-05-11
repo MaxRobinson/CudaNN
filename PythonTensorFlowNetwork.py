@@ -3,13 +3,14 @@ import os
 from os import path
 import csv
 from random import shuffle
+import time
 
 import tensorflow as tf
 import numpy as np
 
 
 # Get Data
-root_path = ""
+root_path = "./celebrityFaces"
 data = []
 
 folders = os.listdir(root_path)
@@ -69,17 +70,20 @@ def multilayer_perceptron(x, weights, biases, keep_prob):
     return out_layer
 
 
-n_hidden_1 = 128
 n_input = 128
+n_hidden_1 = 15
+n_hidden_2 = 10
 n_classes = 3
 
 weights = {
     'h1': tf.Variable(tf.random_normal([n_input, n_hidden_1])),
+    'h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
     'out': tf.Variable(tf.random_normal([n_hidden_1, n_classes]))
 }
 
 biases = {
     'b1': tf.Variable(tf.random_normal([n_hidden_1])),
+    'b2': tf.Variable(tf.random_normal([n_hidden_2])),
     'out': tf.Variable(tf.random_normal([n_classes]))
 }
 
@@ -87,7 +91,7 @@ keep_prob = tf.placeholder("float")
 
 training_epochs = 5000
 display_step = 1000
-batch_size = 32
+batch_size = 1
 
 x = tf.placeholder("float", [None, n_input])
 y = tf.placeholder("float", [None, n_classes])
@@ -125,13 +129,22 @@ for i in range(cross_val_number):
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-
+        total_itter_time = 0
+        total_time_per_run = 0
         for epoch in range(training_epochs):
+            # timing
+            # average_time_per_run = 0
+            epoch_start_time = time.time()
             avg_cost = 0.0
+            
+            
             total_batch = int(len(x_train) / batch_size)
             x_batches = np.array_split(x_train, total_batch)
             y_batches = np.array_split(y_train, total_batch)
+
             for i in range(total_batch):
+                start = time.time() # timing
+                
                 batch_x, batch_y = x_batches[i], y_batches[i]
                 _, c = sess.run([optimizer, cost],
                                 feed_dict={
@@ -139,12 +152,31 @@ for i in range(cross_val_number):
                                     y: batch_y,
                                     keep_prob: 0.8
                                 })
+                
+                stop = time.time() # timing
+
                 avg_cost += c / total_batch
+                #timing
+                total_time_per_run += stop-start
+
             if epoch % display_step == 0:
                 print("Epoch:", '%04d' % (epoch+1), "cost=", \
                       "{:.9f}".format(avg_cost))
-
+            
+            # timing
+            epoch_stop_time = time.time()
+            total_itter_time += epoch_stop_time - epoch_start_time
+            
+            # print("Average time per epoch: {}ms".format((total_itter_time/(epoch+1)*1000)))
+            # print("Average time per kernel run: {}ms".format((total_time_per_run/(total_batch*(epoch+1)))*1000))
+        
         print("Optimization Finished!")
+        print("==============\n")
+        print("Average time per epoch: {}ms".format((total_itter_time/(epoch+1)*1000)))
+        print("Average time per kernel run: {}ms".format((total_time_per_run/(total_batch*(epoch+1)))*1000))
+            
+
+        
         correct_prediction = tf.equal(tf.argmax(predictions, 1), tf.argmax(y, 1))
         print(correct_prediction)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
@@ -171,5 +203,3 @@ print(standard_deviation)
 #     for _ in range(5):
 #         sess.run(update, feed_dict={p1: 1.0})
 #     print(sess.run(v1))
-ClassificationNetwork.py
-Displaying ClassificationNetwork.py.
