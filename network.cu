@@ -18,6 +18,7 @@
 #define DEBUG_OUTPUT false
 #define DEBUG_DELTA_K false
 #define DEBUGNET false
+#define DEBUG_TIMEING false
 #define index(i,j,ld) (((j)*(ld))+(i))
 
 
@@ -676,16 +677,27 @@ int main(int argc, char** argv) {
                 cudaThreadSynchronize();
                 cudaEventElapsedTime(&oneItterTime, itterStart, itterStop);
                 total_itter_time += oneItterTime;
-                // cout << "Itter time: " << oneItterTime << endl;
+
+                // clean up timing events
+                cudaEventDestroy(startF);
+                cudaEventDestroy(stopF);
+                cudaEventDestroy(startBP);
+                cudaEventDestroy(stopBP);
+                cudaEventDestroy(itterStart);
+                cudaEventDestroy(itterStop);
             }
             average_error = average_error/trainingData_h.size();
             printf("Average Error for Epoch #%d: %f \n", itter, average_error);
             itter++;
             
+            #if DEBUG_TIMEING
             // print times
             float totalItters = itter*trainingData_h.size();
             printAvgTraingTimes(totalItters, total_itter_time, total_fp_time, total_bp_time);
+            #endif
         }
+
+
         // print times
         float totalItters = itter*trainingData_h.size();
         printAvgTraingTimes(totalItters, total_itter_time, total_fp_time, total_bp_time);
