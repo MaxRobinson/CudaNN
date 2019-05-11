@@ -38,7 +38,7 @@ class InputValues {
         bool useValidationSet = false;
         bool training = false;
         bool gt = false;
-        bool usePredefWeights = true;
+        bool usePredefWeights = false;
         bool performEvalutation = false;
         std::string archFile;
         std::string weightsFile; 
@@ -198,7 +198,7 @@ Network* readWeightsFile(string weightsFile){
                 break;
         }
     }
-
+    f.close();
     return network_h;
 }
 
@@ -231,6 +231,7 @@ void readData(string filePath, vector<float*>* data, int elements_per_line){
         }
         (*data).push_back(values);
     }
+    f.close();
 }
 
 void writeWeights(string filePath, NetworkArch* networkArch, Network* network){
@@ -273,6 +274,7 @@ void writeWeights(string filePath, NetworkArch* networkArch, Network* network){
         }
     }
     // do not put a newline at the end of the file
+    f.close();
 }
 
 #endif

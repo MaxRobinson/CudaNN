@@ -26,7 +26,6 @@ using namespace std;
 
 /*
 *  Print Matrix on host
-*
 */
 void printMat(float*P,int uWP,int uHP){
     //printf("\n %f",P[1]);
@@ -487,12 +486,6 @@ int main(int argc, char** argv) {
     
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
-    
-    Network* network_h;
-    // if weights are defined read them in
-    if(iv.usePredefWeights){
-        network_h = readWeightsFile(iv.weightsFile);
-    }
 
     // if training read training data and gt
     vector<float*> trainingData_h;
@@ -511,8 +504,6 @@ int main(int argc, char** argv) {
     #endif 
 
     // if evaluation set supplied read in
-
-    // set outputfile
 
 
     // cublasStatus status;
@@ -545,12 +536,26 @@ int main(int argc, char** argv) {
     network->w3 = weights3_d; 
 
     // init input as random for testing for now
-    if(iv.weightsFile.empty()){
+    if(!iv.usePredefWeights){
         cout << "Initializing weights with Random values" << endl;
 
         initWeights(&weights1_d, input_layer_size * hidden_layer_1_size);
         initWeights(&weights2_d, hidden_layer_1_size * hidden_layer_2_size);
         initWeights(&weights3_d, hidden_layer_2_size * output_layer_size);
+    }
+    else {
+        Network* network_h;
+        // if weights are defined read them in
+        if(iv.usePredefWeights){
+            cout << "reading in weights" << endl;
+            network_h = readWeightsFile(iv.weightsFile);
+        }
+        CUDA_CALL(cudaMemcpy(weights1_d, network_h->w1, input_layer_size * hidden_layer_1_size *sizeof(float), cudaMemcpyHostToDevice));
+        CUDA_CALL(cudaMemcpy(weights2_d, network_h->w2, hidden_layer_1_size * hidden_layer_2_size *sizeof(float), cudaMemcpyHostToDevice));
+        CUDA_CALL(cudaMemcpy(weights3_d, network_h->w3, hidden_layer_2_size * output_layer_size *sizeof(float), cudaMemcpyHostToDevice));
+
+        // data allocated by vectors is released;
+        network_h = NULL;
     }
 
     #if DEBUGNET
@@ -645,10 +650,7 @@ int main(int argc, char** argv) {
     }
     cout << "Writing weights to: " << iv.outputFile << endl;
     
-    if (network_h != 0){
-        cout << "Host Network is not empty, must release. " << endl;
-    }
-    network_h = getNetworkFromDevice(input_values_d, weights1_d, weights2_d, weights3_d, 
+    Network* network_h = getNetworkFromDevice(input_values_d, weights1_d, weights2_d, weights3_d, 
                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     writeWeights(iv.outputFile, networkArch, network_h);
 
