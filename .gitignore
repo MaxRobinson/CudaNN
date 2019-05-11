@@ -1,6 +1,10 @@
 # IDEs
 *.vscode
 
+# python
+*venv
+*.pyc
+
 # CUDA 
 *.i
 *.ii
