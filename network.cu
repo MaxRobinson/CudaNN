@@ -72,6 +72,9 @@ void printNetworkFromDev(float* dev_input, float* dev_w1, float* dev_w2, float* 
     cout<<endl;
 }
 
+/**
+* get network off of the device and transfered back to the host
+*/
 Network* getNetworkFromDevice(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
     int input_layer_size, int hidden_layer_1_size, int hidden_layer_2_size, int output_layer_size){
     float *h_w1 = (float*)malloc(input_layer_size*hidden_layer_1_size*sizeof(float));
@@ -121,7 +124,9 @@ __host__ int cuRandCall(curandStatus_t value, const char* file, int line){
 }
 #define CURAND_CALL(value) cuRandCall(value, __FILE__, __LINE__)
 
-
+/**
+* helper function for cublas calls
+*/
 __host__ int cublasCall(cublasStatus status, const char* file, int line) {
     if (status != CUBLAS_STATUS_SUCCESS) {
         printf("CUBLAS Error %d at %s:%d \n", status, file, line);
@@ -132,6 +137,11 @@ __host__ int cublasCall(cublasStatus status, const char* file, int line) {
 #define CUBLAS_CALL(value) cublasCall( value, __FILE__, __LINE__)
 
 
+
+/**
+* Kernel
+* Adds a constant to an array. 
+*/
 __global__ void addConstant(float* input, float constant, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements)
@@ -146,7 +156,6 @@ __global__ void addConstant(float* input, float constant, int num_elements){
 * sigmoid = (1 / (1 + e^(-input)))
 *
 */
-
 __global__ void sigmoid(float* input, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
     if(tid < num_elements)
@@ -188,12 +197,9 @@ void outputNodeDeltaK(float* predicted_values, float* actual_values, float* res_
     }
 }
 
-// __global__ 
-// void hiddenLayerError(float* previous_layer_weights, float* layer_outputs, float* layer_errors, float* layer_deltas, int num_elements){
-
-// }
-
-// delta_j output output size will be equal to size of the current layer 
+/** 
+* Delta_j output output size will be equal to size of the current layer
+*/ 
 __global__ 
 void hiddenNodeDeltaJ(float* layer_outputs, float* contribution_factors, float* res_layer_delta_js, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
@@ -211,8 +217,10 @@ void hiddenNodeDeltaJ(float* layer_outputs, float* contribution_factors, float* 
 }
 
 
-// used for both hidden and output layer weights
-// we are itterating based on wieght updates to weights all going to the same node.
+/** 
+* used for both hidden and output layer weights
+* we are itterating based on wieght updates to weights all going to the same node.
+*/ 
 __global__
 void weightUpdate(float* current_weights, float* delta, float* previous_layer_input, float alpha, int offset, int num_elements){
     const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x; 
@@ -270,7 +278,7 @@ void initWeights(float ** d_array, int arraySize){
 }
 
 /* 
-* Multiplies an input vector 1 row x yColumns 
+* Multiplies an input vector 1 row x y Columns 
 */
 float* layerMult(float* input_values, int input_size, 
                 float * weights, int weight_col_size){
@@ -345,7 +353,10 @@ NetworkOutput* forwardPass(float* input_values, int input_size,
     return networkOutput;
 }
 
-
+/**
+* Helper function to calculate how much each node contributed to the error at the next (downstream) network layer.
+* 
+*/ 
 float* calculateContributionsToError(int hidden_layer_size, int next_layer_size, float* weight_matrix_d, float* delta_ks_d){
     // get contributions to error per node for layer 2
     float* contributionsToError = (float*) malloc(hidden_layer_size*sizeof(float)); 
@@ -373,6 +384,10 @@ float* calculateContributionsToError(int hidden_layer_size, int next_layer_size,
     return contribsToError_d;
 }
 
+/**
+* Implementation of the back propagation algorithm
+* Overall implementation is to keep everything on the GPU for as long as possible and do as much compute on the GPU as possible
+*/
 void backPropagate(float alpha, NetworkArch* networkArch, Network* network, NetworkOutput* dev_network_output, float* input_values, float* actual_output_d){
     int input_layer_size = networkArch->inputLayer; 
     int hidden_layer_1_size = networkArch->layer1; 
@@ -452,31 +467,10 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     // cudaThreadSynchronize();
     cudaEventSynchronize(stop);
     cudaEventDestroy(stop);
+
+    // release intermediates 
+
 }
-
-// void trainNetwork(){
-//     // output is still on device
-//     NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
-//         weights1_d, hidden_layer_1_size,
-//         weights2_d, hidden_layer_2_size,
-//         weights3_d, output_layer_size
-//     );
-
-//     // if training:
-//     float* actual_values_d;
-//     CUDA_CALL(cudaMalloc((void**)&actual_values_d, output_layer_size*sizeof(float)));
-//     CUDA_CALL(cudaMemcpy(actual_values_d, <<<<>>>>>, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
-    
-//     // if training
-//     if(iv.training){
-//         backPropagate(networkArch, network, dev_network_output, input_values_d, actual_values_d);
-//         #if DEBUG
-//         cout<<"printing new weights"<< endl;
-//         printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
-//                     input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
-//         #endif
-//     }
-// }
 
 /**
 * Main program
@@ -540,11 +534,7 @@ int main(int argc, char** argv) {
     // cuda malloc input value space on GPU
     CUDA_CALL(cudaMalloc((void **) &input_values_d, (input_layer_size) * sizeof(float)));
 
-    // // cuda malloc space for weight matrices on GPU
-    // CUDA_CALL(cudaMalloc((void **) &weights1, (input_layer_size * hidden_layer_1_size) * sizeof(float)));
-    // CUDA_CALL(cudaMalloc((void **) &weights2, (hidden_layer_1_size * hidden_layer_2_size) * sizeof(float)));
-    // CUDA_CALL(cudaMalloc((void **) &weights3, (hidden_layer_2_size * output_layer_size) * sizeof(float)));
-
+    // cuda malloc space for weight matrices on GPU
     CUBLAS_CALL(cublasAlloc((input_layer_size * hidden_layer_1_size), sizeof(float), (void **) &weights1_d));
     CUBLAS_CALL(cublasAlloc((hidden_layer_1_size * hidden_layer_2_size), sizeof(float), (void **) &weights2_d));
     CUBLAS_CALL(cublasAlloc((hidden_layer_2_size * output_layer_size), sizeof(float), (void **) &weights3_d));
