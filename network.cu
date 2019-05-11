@@ -7,6 +7,7 @@
 #include <math.h>
 #include <ctime>
 #include <time.h>
+#include <algorithm> 
 
 #include "cublas.h"
 #include <curand.h>
@@ -18,10 +19,11 @@
 #define DEBUG_OUTPUT false
 #define DEBUG_DELTA_K false
 #define DEBUGNET false
-#define DEBUG_TIMEING false
+#define DEBUG_TIMEING true
 #define index(i,j,ld) (((j)*(ld))+(i))
 
-
+int numBlocks = 1; 
+int blockSize = 256;
 
 using namespace std;
 
@@ -274,7 +276,7 @@ void initWeights(float ** d_array, int arraySize){
         to perform this operation */
     CURAND_CALL(curandGenerateUniform(gen, *d_array, arraySize));
 
-    addConstant<<<1, arraySize>>>(*d_array, -0.5, arraySize);
+    addConstant<<<numBlocks, blockSize>>>(*d_array, -0.5, arraySize);
 }
 
 /* 
@@ -402,7 +404,7 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     CUBLAS_CALL(cublasAlloc(output_layer_size, sizeof(float), (void**) &delta_ks_d));
     // start backprop
     // for fun, get the squared error for the nodes
-    outputNodeDeltaK<<<1, output_layer_size>>>(dev_network_output->output, actual_output_d, delta_ks_d, output_layer_size);
+    outputNodeDeltaK<<<numBlocks, blockSize>>>(dev_network_output->output, actual_output_d, delta_ks_d, output_layer_size);
 
     #if DEBUG_DELTA_K
     float* h_delta_k = (float *)malloc(output_layer_size*sizeof(float));
@@ -419,7 +421,7 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     float* delta_js_l2_d; 
     CUBLAS_CALL(cublasAlloc(hidden_layer_2_size, sizeof(float), (void**)&delta_js_l2_d));
     // Calculate the detla JS for layer2
-    hiddenNodeDeltaJ<<<1, hidden_layer_2_size>>>(dev_network_output->layer2, contribsToError_d, delta_js_l2_d, hidden_layer_2_size);
+    hiddenNodeDeltaJ<<<numBlocks, blockSize>>>(dev_network_output->layer2, contribsToError_d, delta_js_l2_d, hidden_layer_2_size);
 
     #if DEBUG
     float* h_delta_j = (float *)malloc(hidden_layer_2_size*sizeof(float));
@@ -436,7 +438,7 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     float* delta_js_l1_d; 
     CUBLAS_CALL(cublasAlloc(hidden_layer_1_size, sizeof(float), (void**)&delta_js_l1_d));
     // Calculate the detla JS for layer1
-    hiddenNodeDeltaJ<<<1, hidden_layer_1_size>>>(dev_network_output->layer1, contribsToError_1_d, delta_js_l1_d, hidden_layer_1_size);
+    hiddenNodeDeltaJ<<<numBlocks, blockSize>>>(dev_network_output->layer1, contribsToError_1_d, delta_js_l1_d, hidden_layer_1_size);
 
     #if DEBUG
     float* h_delta_j_1 = (float *)malloc(hidden_layer_1_size*sizeof(float));
@@ -452,15 +454,15 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     // update each column in the matrix one at a time, aka. itterate based on weights all going to the same
     // node thus using 1 delta at a time for each node. 
     for(int i = 0; i < hidden_layer_1_size; i++){
-        weightUpdate<<<1, input_layer_size>>>(weights1_d, &delta_js_l1_d[i], input_values, alpha, i * input_layer_size, input_layer_size);
+        weightUpdate<<<numBlocks, blockSize>>>(weights1_d, &delta_js_l1_d[i], input_values, alpha, i * input_layer_size, input_layer_size);
     }
 
     for(int i = 0; i < hidden_layer_2_size; i++){
-        weightUpdate<<<1, hidden_layer_1_size>>>(weights2_d, &delta_js_l2_d[i], dev_network_output->layer1, alpha, i * hidden_layer_1_size, hidden_layer_1_size);
+        weightUpdate<<<numBlocks, blockSize>>>(weights2_d, &delta_js_l2_d[i], dev_network_output->layer1, alpha, i * hidden_layer_1_size, hidden_layer_1_size);
     }
 
     for(int i = 0; i < output_layer_size; i++){
-        weightUpdate<<<1, hidden_layer_2_size>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, alpha, i * hidden_layer_2_size, hidden_layer_2_size);
+        weightUpdate<<<numBlocks, blockSize>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, alpha, i * hidden_layer_2_size, hidden_layer_2_size);
     }
 
     // cudaEvent_t stop = getTime(0);
@@ -501,6 +503,19 @@ int main(int argc, char** argv) {
     // read in network architecture and always display to CLI
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
+
+    // determine the number of blocks
+    vector<float> layerSizes;
+    layerSizes.push_back(networkArch->inputLayer);
+    layerSizes.push_back(networkArch->layer1);
+    layerSizes.push_back(networkArch->layer2);
+    layerSizes.push_back(networkArch->outputLayer);
+    float totalThreads = *max_element(layerSizes.data(), layerSizes.data()+4);
+    numBlocks = totalThreads / blockSize;
+    if(((int)totalThreads % blockSize) != 0){
+        numBlocks++;
+    }
+    printf("Num Blocks: %d \n", numBlocks);
     #pragma endregion
 
     #pragma region // Init the network on device
@@ -651,7 +666,7 @@ int main(int argc, char** argv) {
                 cudaEvent_t startBP = getTime(0);
 
                 // calculate squared error
-                squaredError<<<1, output_layer_size>>>(dev_network_output->output, gt_d, error_array_d, input_layer_size);
+                squaredError<<<numBlocks, blockSize>>>(dev_network_output->output, gt_d, error_array_d, input_layer_size);
                 float squaredError = cublasSdot(output_layer_size, error_array_d, 1 , ones_d, 1);
                 average_error += squaredError;
 
