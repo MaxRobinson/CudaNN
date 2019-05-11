@@ -289,4 +289,21 @@ void writeWeights(string filePath, NetworkArch* networkArch, Network* network){
     f.close();
 }
 
+void writeResultData(string filePath, vector<float*>* results, int elements_per_line){
+    ofstream f (filePath);
+    vector<float*> res = *results;
+    for(int j = 0; j < res.size(); j++){
+        float * res_line = res[j];
+        for(int i = 0; i < elements_per_line; i++){
+            if(i != elements_per_line-1){
+                f << res_line[i] << ",";
+            }else {
+                f << res_line[i];
+            }
+        }
+        f << endl;
+    }
+    f.close();
+}
+
 #endif

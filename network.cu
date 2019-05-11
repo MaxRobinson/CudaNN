@@ -471,6 +471,14 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
 
 }
 
+void freeFloatVector(vector<float*> data_h){
+    for(int i = 0; i < data_h.size(); i++){
+        free(data_h[i]);
+    }
+    data_h.clear();
+    data_h.shrink_to_fit();
+}
+
 /**
 * Main program
 *
@@ -548,7 +556,6 @@ int main(int argc, char** argv) {
         // if weights are defined read them in
         cout << "reading in weights" << endl;
         readWeightsFile(iv.weightsFile, &network_h, networkArch);
-        cout << "LAYER 3: " << network_h->w3[0] << endl;
         CUDA_CALL(cudaMemcpy(weights1_d, network_h->w1, input_layer_size * hidden_layer_1_size *sizeof(float), cudaMemcpyHostToDevice));
         CUDA_CALL(cudaMemcpy(weights2_d, network_h->w2, hidden_layer_1_size * hidden_layer_2_size *sizeof(float), cudaMemcpyHostToDevice));
         CUDA_CALL(cudaMemcpy(weights3_d, network_h->w3, hidden_layer_2_size * output_layer_size *sizeof(float), cudaMemcpyHostToDevice));
@@ -567,82 +574,124 @@ int main(int argc, char** argv) {
                 input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
     #endif
 
+    if(iv.training){
+        // run the network for all the data as if training
+        float* gt_d;
+        CUDA_CALL(cudaMalloc((void**)&gt_d, output_layer_size*sizeof(float)));
+        float* error_array_d;
+        CUDA_CALL(cudaMalloc((void**)&error_array_d, output_layer_size*sizeof(float)));
+        
+        // used to calculate squared error
+        float* ones = (float*) malloc(output_layer_size*sizeof(float));
+        for(int i = 0; i < output_layer_size; i++){
+            ones[i] = i;
+        }
+        float* ones_d;
+        CUDA_CALL(cudaMalloc((void**)&ones_d, output_layer_size*sizeof(float)));
+        CUDA_CALL(cudaMemcpy(ones_d, ones, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
 
-    // run the network for all the data as if training
-    float* gt_d;
-    CUDA_CALL(cudaMalloc((void**)&gt_d, output_layer_size*sizeof(float)));
-    float* error_array_d;
-    CUDA_CALL(cudaMalloc((void**)&error_array_d, output_layer_size*sizeof(float)));
-    
-    // used to calculate squared error
-    float* ones = (float*) malloc(output_layer_size*sizeof(float));
-    for(int i = 0; i < output_layer_size; i++){
-        ones[i] = i;
-    }
-    float* ones_d;
-    CUDA_CALL(cudaMalloc((void**)&ones_d, output_layer_size*sizeof(float)));
-    CUDA_CALL(cudaMemcpy(ones_d, ones, output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
 
+        float previous_average_error = 1000000;
+        float average_error = 100000;
+        int itter = 0;
+        // while( abs(average_error - previous_average_error) > .000001 && abs(average_error) < abs(previous_average_error) && itter < MAX_EPOCHS ){
+        while(itter < epochs ){        
+            previous_average_error = average_error;
+            average_error = 0;
+            for(int i = 0; i < trainingData_h.size(); i++){
+                // train the network for the entire data
+                // put input on the GPU
+                CUDA_CALL(cudaMemcpy(input_values_d, trainingData_h[i], input_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+                
+                // get network output
+                // output is still on device
+                NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
+                    weights1_d, hidden_layer_1_size,
+                    weights2_d, hidden_layer_2_size,
+                    weights3_d, output_layer_size
+                );
 
-    float previous_average_error = 1000000;
-    float average_error = 100000;
-    int itter = 0;
-    // while( abs(average_error - previous_average_error) > .000001 && abs(average_error) < abs(previous_average_error) && itter < MAX_EPOCHS ){
-    while(itter < epochs ){        
-        previous_average_error = average_error;
-        average_error = 0;
-        for(int i = 0; i < trainingData_h.size(); i++){
-            // train the network for the entire data
-            // put input on the GPU
-            CUDA_CALL(cudaMemcpy(input_values_d, trainingData_h[i], input_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+                #if DEBUG_OUTPUT
+                // print network output
+                float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
+                CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));
+
+                printf("Network output: ");
+                printMat(h_output, output_layer_size, 1);
+                free(h_output);
+                #endif
+
             
-            // get network output
-            // output is still on device
+                // copy gt to device to use for backprop
+                CUDA_CALL(cudaMemcpy(gt_d, gtData_h[i], output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+
+
+                // calculate squared error
+                squaredError<<<1, output_layer_size>>>(dev_network_output->output, gt_d, error_array_d, input_layer_size);
+                float squaredError = cublasSdot(output_layer_size, error_array_d, 1 , ones_d, 1);
+                average_error += squaredError;
+
+                // backProp to train the network
+                backPropagate(alpha, networkArch, network, dev_network_output, input_values_d, gt_d);
+                
+                #if DEBUGNET
+                cout<<"printing new weights"<< endl;
+                printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
+                            input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+                #endif
+                cudaThreadSynchronize();
+
+                cublasFree(dev_network_output->layer1);
+                cublasFree(dev_network_output->layer2);
+                cublasFree(dev_network_output->output);
+            }
+            average_error = average_error/trainingData_h.size();
+            printf("Average Error for Epoch #%d: %f \n", itter, average_error);
+            itter++;
+        }
+        cout << "Finished Training" << endl;
+
+        // Free training data 
+        freeFloatVector(trainingData_h);
+        freeFloatVector(gtData_h);
+        free(ones);
+        CUDA_CALL(cudaFree(ones_d));
+        CUDA_CALL(cudaFree(gt_d));
+        CUDA_CALL(cudaFree(error_array_d));
+    }
+
+    if(iv.performEvalutation){
+        cout << "Starting Eval" << endl;
+        vector<float*> evaluationData_h;
+        // read evaluation data
+        readData(iv.evaluationFile, &evaluationData_h, networkArch->inputLayer);
+        vector<float*> results_h;
+        
+        cout << "start computing results" << endl;
+
+        for(int i = 0; i < evaluationData_h.size(); i++){
+            
+            CUDA_CALL(cudaMemcpy(input_values_d, evaluationData_h[i], input_layer_size*sizeof(float), cudaMemcpyHostToDevice));
+
             NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
                 weights1_d, hidden_layer_1_size,
                 weights2_d, hidden_layer_2_size,
                 weights3_d, output_layer_size
             );
 
-            #if DEBUG_OUTPUT
-            // print network output
-            float* h_output = (float *)malloc (1 * output_layer_size * sizeof (float));
-            CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*h_output), dev_network_output->output, 1, h_output, 1));
-
-            printf("Network output: ");
-            printMat(h_output, output_layer_size, 1);
-            free(h_output);
-            #endif
-
-        
-            // copy gt to device to use for backprop
-            CUDA_CALL(cudaMemcpy(gt_d, gtData_h[i], output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
-
-
-            // calculate squared error
-            squaredError<<<1, output_layer_size>>>(dev_network_output->output, gt_d, error_array_d, input_layer_size);
-            float squaredError = cublasSdot(output_layer_size, error_array_d, 1 , ones_d, 1);
-            average_error += squaredError;
-
-            // backProp to train the network
-            backPropagate(alpha, networkArch, network, dev_network_output, input_values_d, gt_d);
-            
-            #if DEBUGNET
-            cout<<"printing new weights"<< endl;
-            printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
-                        input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
-            #endif
-            cudaThreadSynchronize();
-
-            cublasFree(dev_network_output->layer1);
-            cublasFree(dev_network_output->layer2);
-            cublasFree(dev_network_output->output);
+            float* output_h = (float *)malloc (1 * output_layer_size * sizeof (float));
+            CUBLAS_CALL(cublasGetMatrix (1, output_layer_size, sizeof(*output_h), dev_network_output->output, 1, output_h, 1));
+            results_h.push_back(output_h);
         }
-        average_error = average_error/trainingData_h.size();
-        printf("Average Error for Epoch #%d: %f \n", itter, average_error);
-        itter++;
+
+        writeResultData("ResultsFile.txt", &results_h, output_layer_size);
+
+        // free data
+        freeFloatVector(evaluationData_h);
+        freeFloatVector(results_h);
     }
-    cout << "Finished Training" << endl;
+
+
 
     // output the weight file
     if(iv.outputFile.empty()){
