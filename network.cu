@@ -462,15 +462,18 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
         weightUpdate<<<1, hidden_layer_2_size>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, alpha, i * hidden_layer_2_size, hidden_layer_2_size);
     }
 
-    cudaEvent_t stop = getTime(0);
+    // cudaEvent_t stop = getTime(0);
     // cudaThreadSynchronize();
-    cudaEventSynchronize(stop);
-    cudaEventDestroy(stop);
+    // cudaEventSynchronize(stop);
+    // cudaEventDestroy(stop);
 
     // release intermediates 
 
 }
 
+/** 
+* Helper function to release a vector of float array 
+*/
 void freeFloatVector(vector<float*> data_h){
     for(int i = 0; i < data_h.size(); i++){
         free(data_h[i]);
@@ -576,9 +579,12 @@ int main(int argc, char** argv) {
         printf("First value of training Data: %f \n", trainingData_h[0][0]);
         printf("First value of GT Data: %f \n", trainingData_h[0][0]);
         #endif 
+
         // run the network for all the data as if training
+        // create space for ground truth data on device. Do this once for speed.
         float* gt_d;
         CUDA_CALL(cudaMalloc((void**)&gt_d, output_layer_size*sizeof(float)));
+        // create space for an error array on device. Do this once for speed.
         float* error_array_d;
         CUDA_CALL(cudaMalloc((void**)&error_array_d, output_layer_size*sizeof(float)));
         
@@ -596,14 +602,24 @@ int main(int argc, char** argv) {
         float average_error = 100000;
         int itter = 0;
         // while( abs(average_error - previous_average_error) > .000001 && abs(average_error) < abs(previous_average_error) && itter < MAX_EPOCHS ){
-        while(itter < epochs ){        
+        // timing code
+        float total_itter_time = 0;
+        float total_fp_time = 0;
+        float total_bp_time = 0; 
+        while(itter < epochs){        
             previous_average_error = average_error;
             average_error = 0;
             for(int i = 0; i < trainingData_h.size(); i++){
+                float forwardPassTime; 
+                float bpTime;
+
+                float oneItterTime;
+                cudaEvent_t itterStart = getTime(0);
                 // train the network for the entire data
                 // put input on the GPU
                 CUDA_CALL(cudaMemcpy(input_values_d, trainingData_h[i], input_layer_size*sizeof(float), cudaMemcpyHostToDevice));
                 
+                cudaEvent_t startF = getTime(0);
                 // get network output
                 // output is still on device
                 NetworkOutput* dev_network_output = forwardPass(input_values_d, input_layer_size,
@@ -611,6 +627,10 @@ int main(int argc, char** argv) {
                     weights2_d, hidden_layer_2_size,
                     weights3_d, output_layer_size
                 );
+                cudaEvent_t stopF = getTime(0);
+                cudaEventSynchronize(stopF);
+                cudaEventElapsedTime(&forwardPassTime, startF, stopF);
+                total_fp_time += forwardPassTime;
 
                 #if DEBUG_OUTPUT
                 // print network output
@@ -626,6 +646,8 @@ int main(int argc, char** argv) {
                 // copy gt to device to use for backprop
                 CUDA_CALL(cudaMemcpy(gt_d, gtData_h[i], output_layer_size*sizeof(float), cudaMemcpyHostToDevice));
 
+                // start timing for backProp
+                cudaEvent_t startBP = getTime(0);
 
                 // calculate squared error
                 squaredError<<<1, output_layer_size>>>(dev_network_output->output, gt_d, error_array_d, input_layer_size);
@@ -634,7 +656,11 @@ int main(int argc, char** argv) {
 
                 // backProp to train the network
                 backPropagate(alpha, networkArch, network, dev_network_output, input_values_d, gt_d);
-                
+                cudaEvent_t stopBP = getTime(0);
+                cudaEventSynchronize(stopBP);
+                cudaEventElapsedTime(&bpTime, startBP, stopBP);
+                total_bp_time+=bpTime;
+
                 #if DEBUGNET
                 cout<<"printing new weights"<< endl;
                 printNetworkFromDev(input_values_d, weights1_d, weights2_d, weights3_d, 
@@ -645,11 +671,25 @@ int main(int argc, char** argv) {
                 cublasFree(dev_network_output->layer1);
                 cublasFree(dev_network_output->layer2);
                 cublasFree(dev_network_output->output);
+                cudaEvent_t itterStop = getTime(0);
+                cudaEventSynchronize(itterStop);
+                cudaThreadSynchronize();
+                cudaEventElapsedTime(&oneItterTime, itterStart, itterStop);
+                total_itter_time += oneItterTime;
+                // cout << "Itter time: " << oneItterTime << endl;
             }
             average_error = average_error/trainingData_h.size();
             printf("Average Error for Epoch #%d: %f \n", itter, average_error);
             itter++;
+            
+            // print times
+            float totalItters = itter*trainingData_h.size();
+            printAvgTraingTimes(totalItters, total_itter_time, total_fp_time, total_bp_time);
         }
+        // print times
+        float totalItters = itter*trainingData_h.size();
+        printAvgTraingTimes(totalItters, total_itter_time, total_fp_time, total_bp_time);
+        
         cout << "Finished Training" << endl;
 
         // Free training data 

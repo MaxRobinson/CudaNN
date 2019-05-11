@@ -306,4 +306,11 @@ void writeResultData(string filePath, vector<float*>* results, int elements_per_
     f.close();
 }
 
+void printAvgTraingTimes(int totalItters, float total_itter_time, float total_fp_time, float total_bp_time){
+    //print times
+    printf("Average Times of compute: \n");
+    printf("Itteration: %.4fms Forward Pass: %.4fms BackProp: %.4fms \n", total_itter_time/totalItters, total_fp_time/totalItters, total_bp_time/totalItters);
+    cout << endl;
+}
+
 #endif
