@@ -5,6 +5,8 @@
 #include <vector>
 #include <string>
 #include <math.h>
+#include <ctime>
+#include <time.h>
 
 #include "cublas.h"
 #include <curand.h>
@@ -17,7 +19,7 @@
 #define DEBUG_DELTA_K false
 #define DEBUGNET false
 #define index(i,j,ld) (((j)*(ld))+(i))
-#define ALPHA .1
+
 
 
 using namespace std;
@@ -68,6 +70,24 @@ void printNetworkFromDev(float* dev_input, float* dev_w1, float* dev_w2, float* 
     cout<<"  layer3" <<endl;
     printMat(h_w3, output_layer_size, hidden_layer_2_size); 
     cout<<endl;
+}
+
+Network* getNetworkFromDevice(float* dev_input, float* dev_w1, float* dev_w2, float* dev_w3,
+    int input_layer_size, int hidden_layer_1_size, int hidden_layer_2_size, int output_layer_size){
+    float *h_w1 = (float*)malloc(input_layer_size*hidden_layer_1_size*sizeof(float));
+    cublasGetMatrix(input_layer_size, hidden_layer_1_size, sizeof(float), dev_w1, input_layer_size, h_w1, input_layer_size);
+
+    float *h_w2 = (float*)malloc(hidden_layer_1_size*hidden_layer_2_size*sizeof(float));
+    cublasGetMatrix(hidden_layer_1_size, hidden_layer_2_size, sizeof(float), dev_w2, hidden_layer_1_size, h_w2, hidden_layer_1_size);
+    
+    float *h_w3 = (float*)malloc(hidden_layer_2_size*output_layer_size*sizeof(float));
+    cublasGetMatrix(hidden_layer_2_size, output_layer_size, sizeof(float), dev_w3, hidden_layer_2_size, h_w3, hidden_layer_2_size);
+
+    Network* network = new Network;
+    network->w1 = h_w1;
+    network->w2 = h_w2;
+    network->w3 = h_w3;
+    return network;
 }
 
 /** 
@@ -353,7 +373,7 @@ float* calculateContributionsToError(int hidden_layer_size, int next_layer_size,
     return contribsToError_d;
 }
 
-void backPropagate(NetworkArch* networkArch, Network* network, NetworkOutput* dev_network_output, float* input_values, float* actual_output_d){
+void backPropagate(float alpha, NetworkArch* networkArch, Network* network, NetworkOutput* dev_network_output, float* input_values, float* actual_output_d){
     int input_layer_size = networkArch->inputLayer; 
     int hidden_layer_1_size = networkArch->layer1; 
     int hidden_layer_2_size = networkArch->layer2;
@@ -417,15 +437,15 @@ void backPropagate(NetworkArch* networkArch, Network* network, NetworkOutput* de
     // update each column in the matrix one at a time, aka. itterate based on weights all going to the same
     // node thus using 1 delta at a time for each node. 
     for(int i = 0; i < hidden_layer_1_size; i++){
-        weightUpdate<<<1, input_layer_size>>>(weights1_d, &delta_js_l1_d[i], input_values, ALPHA, i * input_layer_size, input_layer_size);
+        weightUpdate<<<1, input_layer_size>>>(weights1_d, &delta_js_l1_d[i], input_values, alpha, i * input_layer_size, input_layer_size);
     }
 
     for(int i = 0; i < hidden_layer_2_size; i++){
-        weightUpdate<<<1, hidden_layer_1_size>>>(weights2_d, &delta_js_l2_d[i], dev_network_output->layer1, ALPHA, i * hidden_layer_1_size, hidden_layer_1_size);
+        weightUpdate<<<1, hidden_layer_1_size>>>(weights2_d, &delta_js_l2_d[i], dev_network_output->layer1, alpha, i * hidden_layer_1_size, hidden_layer_1_size);
     }
 
     for(int i = 0; i < output_layer_size; i++){
-        weightUpdate<<<1, hidden_layer_2_size>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, ALPHA, i * hidden_layer_2_size, hidden_layer_2_size);
+        weightUpdate<<<1, hidden_layer_2_size>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, alpha, i * hidden_layer_2_size, hidden_layer_2_size);
     }
 
     cudaEvent_t stop = getTime(0);
@@ -468,7 +488,8 @@ int main(int argc, char** argv) {
     InputValues iv = InputValues();
     iv.readInputValues(argc, argv);
     iv.validateArgs();
-    int MAX_EPOCHS = 2000;
+    int epochs = iv.epochs;
+    float alpha = iv.alpha;
     
     NetworkArch* networkArch = readNetworkArch(&iv);
     printf("Network Arch = %d:%d:%d:%d \n", networkArch->inputLayer, networkArch->layer1, networkArch->layer2, networkArch->outputLayer);
@@ -569,7 +590,7 @@ int main(int argc, char** argv) {
     float average_error = 100000;
     int itter = 0;
     // while( abs(average_error - previous_average_error) > .000001 && abs(average_error) < abs(previous_average_error) && itter < MAX_EPOCHS ){
-    while(itter < MAX_EPOCHS ){        
+    while(itter < epochs ){        
         previous_average_error = average_error;
         average_error = 0;
         for(int i = 0; i < trainingData_h.size(); i++){
@@ -606,7 +627,7 @@ int main(int argc, char** argv) {
             average_error += squaredError;
 
             // backProp to train the network
-            backPropagate(networkArch, network, dev_network_output, input_values_d, gt_d);
+            backPropagate(alpha, networkArch, network, dev_network_output, input_values_d, gt_d);
             
             #if DEBUGNET
             cout<<"printing new weights"<< endl;
@@ -625,7 +646,21 @@ int main(int argc, char** argv) {
     }
     cout << "Finished Training" << endl;
 
-
+    // output the weight file
+    if(iv.outputFile.empty()){
+        time_t t = time(NULL);
+        stringstream ss; 
+        ss << "weights_" << t << ".txt";
+        iv.outputFile = ss.str();
+    }
+    cout << "Writing weights to: " << iv.outputFile << endl;
+    
+    if (network_h != 0){
+        cout << "Host Network is not empty, must release. " << endl;
+    }
+    network_h = getNetworkFromDevice(input_values_d, weights1_d, weights2_d, weights3_d, 
+                    input_layer_size, hidden_layer_1_size, hidden_layer_2_size, output_layer_size);
+    writeWeights(iv.outputFile, networkArch, network_h);
 
     //TODO make sure all memory gets freed
 

@@ -9,6 +9,8 @@
 #define mrobi100_network
 
 #define MAX_LAYERS 4
+#define DEFAULT_ALPHA .1
+#define DEFAULT_EPOCHS 200
 
 struct NetworkArch{
     int inputLayer; 
@@ -45,6 +47,8 @@ class InputValues {
         std::string validationFile;
         std::string evaluationFile; 
         std::string outputFile; 
+        int epochs = -1;
+        float alpha = -1;
         
     
         void readInputValues(int argc, char** argv){
@@ -82,6 +86,14 @@ class InputValues {
                 {
                     this->outputFile = std::string(argv[++i]);
                 }
+                else if (!input.compare("--epochs"))
+                {
+                    this->epochs = stoi(std::string(argv[++i]));
+                }
+                else if (!input.compare("--alpha"))
+                {
+                    this->alpha = stof(std::string(argv[++i]));
+                }
             }
         }
 
@@ -105,11 +117,20 @@ class InputValues {
                 cout << "User must specify if training or performing evaluation or both" << endl;
                 exit(EXIT_FAILURE);
             }
+
+            if(alpha == -1){
+                alpha = DEFAULT_ALPHA;
+            }
+
+            if(epochs <= 0){
+                epochs = DEFAULT_EPOCHS;
+            }
         }
 
         void checkHelp(int argc){
             if(argc <= 1){
                 cout << "Usage is: ./network.exe --archFile <> --weights <optional> --training <trainingDataFile> --groundTruth <gtFile> --validation <dataFile> --evaluation <dataFileForEval> --output <networkWeightSaveFile>" << endl;
+                exit(EXIT_SUCCESS);
             }
         }
 
@@ -210,6 +231,48 @@ void readData(string filePath, vector<float*>* data, int elements_per_line){
         }
         (*data).push_back(values);
     }
+}
+
+void writeWeights(string filePath, NetworkArch* networkArch, Network* network){
+    ofstream f (filePath);
+    if (!f.good()){
+        cout<< "Bad file to write weights too." << endl;
+        exit(EXIT_FAILURE);
+    }  
+
+    // write csv    
+    int numWeights = (networkArch->inputLayer) * (networkArch->layer1);
+    float* w = network->w1;
+    for(int i = 0; i < numWeights; i++){
+        if(i != numWeights-1){
+            f << w[i] << ",";
+        }else {
+            f << w[i];
+        }
+    }
+    f<<endl;
+
+    numWeights = (networkArch->layer1) * (networkArch->layer2);
+    w = network->w2;
+    for(int i = 0; i < numWeights; i++){
+        if(i != numWeights-1){
+            f << w[i] << ",";
+        }else {
+            f << w[i];
+        }
+    }
+    f<<endl;
+
+    numWeights = (networkArch->layer2) * (networkArch->outputLayer);
+    w = network->w3;
+    for(int i = 0; i < numWeights; i++){
+        if(i != numWeights-1){
+            f << w[i] << ",";
+        }else {
+            f << w[i];
+        }
+    }
+    // do not put a newline at the end of the file
 }
 
 #endif
