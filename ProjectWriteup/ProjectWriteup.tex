@@ -1,0 +1,390 @@
+\documentclass[jair, twoside,11pt,theapa]{article}
+\usepackage{jair, theapa, rawfonts, amssymb}
+\usepackage{graphicx}
+
+\ShortHeadings{GPU Accelerated Multilayer Perceptron}{Robinson}
+\firstpageno{1}
+
+
+\begin{document}
+\title{GPU Accelerated Multilayer Perceptron}
+\author{\name Max Robinson \email max.robinson@jhu.edu \\
+       \addr Johns Hopkins University,\\
+       Baltimore, MD 21218 USA
+}
+
+\maketitle
+
+%\begin{abstract}
+%\label{Abstract}
+%\end{abstract}
+
+\section{Introduction}
+\label{Introduction}
+\footnotetext{Some pieces of this project writeup are derived from previous work by Max Robinson for CS499}
+
+\section{Background}
+\label{Background}
+This section describes the details behind how Multilayer perceptrons and the back propagation algorithms work. 
+
+\subsection{Feedforward Neural network and Multilayer Perceptrons}
+A feedforward multilayer perceptron neural network is a structure for a learning algorithm that is uses connected nodes in a directed manner to solve the problems of classification or regression. 
+Specifically feedforward neural networks are usually multilayered. 
+These networks are typically structured as layers of nodes with non-linear activations functions that are connected to another layer of nodes. 
+
+When connecting nodes from layer to layer, every node from a layer is connected to every other node in the next layer.
+This is known as being a "fully connected" layer.  
+Each connection from one node to another has a weight $w_{ij}$. 
+A bias node with the value of 1 is also introduced at each layer, but no nodes connect to this bias, as it serves only to help serve as a threshold value \cite{BackProp}.
+
+
+For a node, a non-linear activation function is used to determine and constrain the val ue of the inputs before passing on the value. 
+It is important that this activation function be non-linear as this is what allows a network to learn non-learn models. 
+
+For this implementation, the non-linear activation function used is the logistic function.
+To calculate the value of a given node in the network, a linear combinations of the input values multiplied by the weight on the connection is taken as shown in equation \ref{Forward Pass} \cite{BackProp}.
+
+\begin{equation}
+\label{Forward Pass}
+x_j = \sum_{i}{y_i w_{ij}}
+\end{equation}
+
+In equation \ref{Forward Pass}, $x_j$ is the jth unit or node and $y_i$ is the ith input into $j$ and $w_{ij}$ is the weight between unit $i$ and $j$. 
+This linear combination is then put through the nodes activation function \cite{BackProp} show in equation \ref{activation}.
+
+\begin{equation}
+\label{activation}
+y_j = \frac{1}{1+e^{-x_j}}
+\end{equation}
+
+
+In equation \ref{activation}, $y_j$ is the output of node $j$, with input value of $x_j$ as described above. Again, notice that the activation function is non-linear.
+
+To get the total error for the network, which is how difference the output of the network is from the expected output of the network, is described using a form of squared error. Formally $E$ can be described by equation \ref{error}\cite{BackProp}.
+
+\begin{equation}
+\label{error}
+E = \frac{1}{2} \sum_{c}\sum_{j}(y_{j,c}-d_{j,c})^2
+\end{equation}
+
+
+In equation \ref{error}, $c$ is an index over the dataset, and $j$ is an index over the output units. 
+For example if there could be two output nodes of the network. 
+$y$ is the output of the network for a given output node.
+$d$ is the desired state for that output node. 
+This sum gives the total error of the state on a forward pass through the network.
+More simply $ E = \frac{1}{2}(y_{j}-d_{j})^2$ is describes the error at a given node $j$ given an predicted output $y_j$ and desired output $d_j$. 
+
+\subsection{Back Propagation Algorithm}
+\label{Back Propagation}
+To train a feedforward neural network a technique called back propagation is used, which was developed by Rumelhart, Hinton, and Williams \shortcite{BackProp}. 
+Back propagation is used to incrementally update all of the weights in the neural network based on the error of the output of the network. 
+This technique uses Gradient Descent by following the partial derivative of the error function with respect to the inputs and outputs to optimize the network. 
+This update is done in two parts, first calculating the update rule for the output layer, and then calculating the weight updates for the hidden layers.  
+The update rule for the output layer is described in equation \ref{Abstract}.
+
+\begin{equation}
+\label{fullBP}
+\Delta w_{ij} = \alpha (d_j - y_j)y_j(1-y_j)x_{ij} 
+\end{equation}
+\begin{equation}
+\label{delta_k}
+\Delta w_{ij} = \alpha \delta_k x_{ij}, \delta_k = (d_j - y_j)(1-y_j)y_j
+\end{equation}
+
+Here, alpha is the learning rate, $d_j$ is the correct output for node $j$ and $y_j$ is the estimated output of the network for the jth output node, and x ji was the input value of the node before the activation function was applied. This $\Delta w_{ji}$ is then applied to all nodes j connect to output node i. This follows gradient descent because the first and second parts of the equation are the deriviates of the error function with respect to the outputs and the outputs with respect the activation function respectively \cite{BackProp}.
+
+
+\begin{equation}
+\label{contribError}
+\sum_{k \epsilon downstream(j)} \delta_k w_{ij}
+\end{equation}
+
+This sum is then combined with the derivative of the nodes activation function. 
+This gives the total derivative update described by equation \ref{delta J}.
+
+\begin{equation}
+\label{delta J}
+\delta_j = (y_j)(1-y_j)\sum_{k \epsilon downstream(j)} \delta_k w_{ij}
+\end{equation}
+
+\begin{equation}
+\label{hiddenUpdate}
+\Delta w_{ji} = \alpha \delta_j x_{ji}
+\end{equation}
+
+The update rule for weights for hidden layers is then described by equation \ref{hiddenUpdate}. 
+The update rule in equation \ref{hiddenUpdate} applies to all hidden nodes and weights. 
+These updates are applied to the network following the typical gradient descent pattern. 
+Once the network has finished training, the forward propagation part of the process of the network is used to get estimated outputs.
+
+\section{GPU Implementation with CUDA}
+\label{GPU}
+Implementing neural networks can typically be done in two fashions. 
+The first is to loop through the weights and the inputs at each layer and calculate the output for each node one by one for the next layer. 
+Similarly for the back propagation, the error terms and appropriate delta values for each weight can be calculated individually for each weight. 
+This approach works but tends to be slow since loops must be run to calculate all elements involved individually. 
+
+The second approach, and the one taken for this implementation, is to represent the weights and layer outputs in the networks as matrices. 
+Representing the weights in this fashion allows for use of matrix multiplication to speed up calculations of network output. 
+Additionally, the vector and matrix approach enables implementation on GPU architecture since many vector and matrix operations can be parallelized on a GPU. 
+For this implementation, CUDA was chosen as the API to use to implement a multilayer perceptron on a GPU. 
+
+\subsection{Network Architecture}
+To take advantage of multiple cores and threads on the GPU, the network architecture was structured into two parts: three weight matrices, and four vectors to represent layer outputs plus the input vector. 
+The weight matrices were stored as column based matrices to be compatible with CUDA. 
+
+Each row in the matrix represents all of the weights from an input node (e.g. A) to all the nodes in the next layer. 
+More importantly, each column in the matrix represent all the weights that are inbound on a single node in the next layer. 
+In equation \ref{networkArch}, $H1$ has inputs from all input nodes with weights $A_{H1}$, $B_{H1}$, $C_{H1}$, $D_{H1}$
+
+\begin{equation}
+\label{networkArch}
+\left[
+\begin{array}{cccc}
+A_{input} & B_{input} & C_{input} & D_{input}
+\end{array} 
+\right]
+%
+\left[
+\begin{array}{ccc}
+A_{H1} & A_{H2} & A_{H3} \\
+B_{H1} & B_{H2} & B_{H3} \\
+C_{H1} & C_{H2} & C_{H3} \\
+D_{H1} & D_{H2} & D_{H3} \\
+\end{array} 
+\right]
+% 
+= 
+\left[
+\begin{array}{ccc}
+H1_{output} & H2_{output} & H3_{output} \\
+\end{array} 
+\right]
+\end{equation}
+
+Equation \ref{networkArch} shows an example how a 1x4 input vector multiplied by a 4x3 matrix of weights provides a 1x3 output vector for the next layer. 
+The 1x4 input vector is representative of a layer in the network.
+The 4x3 matrix represents the weights that connect the input nodes from the input vector to the next layer of 3 nodes. 
+
+\subsection{Computation}
+To compute and train a multilayer perceptron for this implementation, there are two parts to the computation: the forward pass and the back propagation. 
+All computation takes place on the GPU device, except for where explicitly stated that it does not. 
+\subsubsection{Forward Pass}
+Once the network has been created as a set of matrices the forward pass of the neural network becomes a series of matrix multiplications, and kernel calls.
+The matrix multiplication takes an input vector and a weight matrix and produces the next layers raw output. 
+The raw output of the next layer is equivalent to the $x_j$ in equation \ref{Forward Pass}. 
+The CUDA cuBLAS library \textit{cublasSgemm} function is used to compute the matrix multiplication efficiently.
+
+After the $x_j$s have been computed the activation function still needs to be applied to get the final output of the layer. 
+To compute efficiently compute the output of the activation function in parallel, a custom CUDA kernel is applied to apply the activation function seen in equation \ref{activation}.
+This kernel applies the activation function to each data point individually in parallel. 
+
+After both the matrix multiplication and activation function have been applied, the output of that layer is complete. 
+The output from the layer just computed is then used as input into the next layer and the same steps are executed. 
+
+Once all layers have been computed the last layer represents the output values of the network. 
+During training, all intermediate layer output values are held onto as they are required for updating the network during back propagation. 
+
+\subsubsection{Back Propagation}
+For the implementation the Back Propagation algorithm is chosen to make updates to the network. 
+The loss function implemented is a squared error loss function and all deltas and error functions are based on a gradient descent based approach based on the squared error loss function. 
+The equations to describe the update functions are found in equations \ref{fullBP} - \ref{hiddenUpdate}
+
+To implement back propagation on a GPU several kernels are used to calculate the necessary pieces step by step in parallel. 
+The first step is to calculate the $\delta_k$ error terms for the last layer.
+This is done in parallel using a custom kernel that applies the $\delta_k$ function seen in equation \ref{delta_k}. 
+The results provides the necessary components to update the last weight matrix. 
+
+For each hidden layer, starting from the layers closest to the output layer, the contribution of each node to the error for each output node is calculated.
+The contribution to error is specified by equation \ref{contribError}. 
+This is calculated by iterating through the hidden layer and calculating the dot product of that row of the weight matrix and the $\delta_k$s that were previously calculated. 
+The \textit{cublasSdot} function is used to compute the dot product. 
+After the contribution to error is computed the $\delta_j$ values or error values for hidden nodes is computed with a custom kernel. 
+The custom kernel applies equation \ref{delta J} to each node output in parallel. 
+These steps are done for each hidden layer. 
+
+Once all error terms have been calculated the weights of the network are updated. 
+Updating the weights of the network applies equations \ref{hiddenUpdate} and \ref{delta_k}. 
+The weights are updated by enqueuing a series of custom kernels that update each column of the weight matrix with the appropriate $x_{ji}$ value as each column of the weight matrix is associated with a node. 
+Weights are updated in place in the matrix. 
+
+
+\section{The Program}
+The implementation of the Multilayer perceptron is compiled to an executable call ``network.exe". 
+To run the program the user must specify input parameters to the program. 
+Table \ref{ProgramOptions} specifies the command line parameters available to specify when running the program. 
+Figure \ref{HelpOutput} shows the program output if the program is run with no parameters. 
+
+\begin{table}
+\centering
+\caption{Program CLI options}
+\label{ProgramOptions}
+\begin{tabular}{|l|l|l|l|}
+\hline
+Option & Value & Explanation & Required \\ \hline
+archFile    & string & file path to arch file & yes \\ \hline
+weights    & string & \small{file path to weights file} & no \\ \hline
+training    & string & file path to training data & no \\ \hline
+groundTruth    & string & file path to ground truth output data  & yes, if training \\ \hline
+evaluation    & string &evaluation file path for data to evaluate & yes, if not training \\ \hline
+output    & string & output File path for weights & no\\ \hline
+epochs    & int & number of training epochs & no\\ \hline
+alpha    & float & learning parameter & no\\ \hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+    \centering
+    \caption{Program help output}
+    \label{HelpOutput}
+    \fbox{%
+    \begin{minipage}{\textwidth}
+        Usage is: ./network.exe --archFile $<$$>$ --weights $<$optional$>$ --training $<$trainingDataFile$>$ --groundTruth $<$gtFile$>$ --evaluation $<$dataFileForEval$>$ --output $<$networkWeightSaveFile$>$ --alpha $<$.1$>$ --epochs $<$200$>$
+    \end{minipage}
+    }
+\end{figure}
+
+To run the program in any way, the program requires an architecture file. 
+This file specifies what the network architecture for the multilayer perceptron is. 
+The architecture file is a one line csv file that has four values specifying, in order, the size of the input layer, first hidden layer, second hidden layer, and output layer. 
+Currently the program only supports multilayer perceptrons with this two hidden layer architecture.
+The size of the layers can be any size less than or equal to 1024 and greater than 0, though smaller values are suggested.
+
+A weights file can be given to the network to specify a a set of weights to use for each layer. 
+The file is a three line csv file. 
+The first line should have $inputSize * hiddenlayer1Size$ number of float values. 
+The second line should have $hiddenlayer1Size * hiddenlayer1Size$ number of float values. 
+The third line should have $hiddenlayer2Size * outputLayerSize$ number of float values. 
+Each values is read into the weight matrix in column order. 
+
+If no weights file is specified a random set of weights is created to fit the architecture of the network. 
+The weights are initialized on the GPU using the cuRAND CUDA library. 
+The weights are then shifted using a kernel function to be between the values of $-0.5$ and $0.5$.
+
+When training a network, the ``--training" flag and the ``--GroundTruth" flags must have values that point to a training file and corresponding ground truth file. 
+The training file must be a csv file where each line is the size of the input layer to the network. 
+The ground truth file must be a csv file where each line is the size of the output layer in the network.
+Ground Truth files should can not be larger than what can be loaded into host memory. 
+The ground truth and training file should match up on a line by line basis (i.e. line 5 in training has a correspond line 5 in the ground truth file).
+
+Training stops once the number of specified epochs is reached. 
+If the number of epochs is not specifies, training runs for a default of 100 epochs. 
+An epoch consists of a forward pass and back propagating through the network once for each data point in the dataset. 
+For every forward pass through the network during training there is a back propagation. 
+
+When training, the program outputs the average error per epoch as well as statistics about how quickly each part of the training process is. 
+Figure \ref{TrainingOutput} shows a sample output of the network while training. 
+
+\begin{figure}[h]
+    \centering
+    \caption{Sample program output during training}
+    \label{TrainingOutput}
+    \fbox{%
+    \begin{minipage}{\textwidth}
+        Average Error for Epoch \#8: 0.010930 \\
+        Epoch Time: 128.874817ms \\
+        Average Times of compute:  \\
+        Iteration: 0.6860ms Forward Pass: 0.0374ms BackProp: 0.6172ms 
+    \end{minipage}
+    }
+\end{figure}
+
+The program is also able to use the network to provide output for a dataset. 
+If an evaluation file is provided, the network reads in the evaluation file and only performs the forward pass of the network for each data point. 
+Evaluation files should be structured the same as training data files, and must not be larger than what can be loaded into host memory. 
+The network output is then collected and saved in csv format to a "ResultsFile.txt". 
+Each line of the results file is an output from the network that corresponds to that line of the evaluation file as input data. 
+
+At the end of any execution, evaluation or training, if an output file is specified by the ``--output" option, the weights of the network are written to that file. 
+If no file is specified, the weights are written to a file called ``weights\_\{\}.txt" with ``\{\}" replaced by the current linux epoch time. 
+
+\section{Experiment}
+\label{Experiment}
+To test that the multilayer perceptron works a network was training on a dataset built for face recognition to see how accurate it can be. 
+Additionally, the speed of the implemented network is compared the that of a commercial CPU based implementation, TensorFlow \cite{tensorFlow}. 
+
+\subsection{Accuracy}
+For our accuracy test, the dataset consists of 1x128 vectors that were created using OpenFace \cite{openface} on a celebrity faces image dataset. 
+The images first were passed through a face detection algorithm implemented using dlib, an open source c++ algorithm library. 
+After faces were detected, OpenFace was used to embed the faces into a 1x128 dimensional vector. 
+
+The dataset was labeled to as a classification problem were the goal is to be able to identify two celebrities and categories those who are not the celebrities as ``other".
+The two celebrities to identify were Anderson Cooper and Scarlett Johansson. 
+The dataset was label as a 1's hot encoding dictating that the output layer of the network is size 3. 
+
+To train the network, the dataset was shuffled and two-thirds split off to be used for training while one-third is used for evaluation. 
+The network had a network architecture of 128, 15, 10, 3. 
+The network was trained for 300 epochs and a learning parameter of $alpha = .1$. 
+
+\subsection{Speed}
+To compare the speed of the multilayer perceptron implementation in this paper, a multilayer perceptron was implemented using TensorFlow on a CPU. 
+The implementations are compared with two different network architectures. 
+One network has architecture 128, 15, 10, 3, and the other has architecture 128, 300, 200, 3. 
+
+The TensorFlow implementation for a multilayer perceptron is similar to the GPU implementation in this paper but there are two key differences. 
+First, the TensorFlow implementation uses a softmax cross entropy loss function, while the GPU implementation uses squared error. 
+Second, the TensorFlow implementation uses a slightly different optimization function, the Adam optimizer \cite{AdamOptimizer}. 
+The Adam optimizer is a gradient-based optimization technique that uses momentum as well as other parameters to help with the optimization process.  
+
+Speed for each multilayer perceptron implementation is compared by looking at the average speed to complete an epoch and the average time to feedforward and back prop through the network. 
+
+\section{Results and Analysis}
+\label{Results}
+This section details the results and analysis for each experiment run. 
+
+\subsection{Accuracy}
+\label{Accuracy}
+To measure accuracy, the error rate is calculated from the predicted classifications and the known correct classifications for the evaluation set. 
+Equation \ref{errorRate} describes how to calculate error rate. 
+
+\begin{equation}
+\label{errorRate}
+error rate = \frac{\# of misclassified test instances}{total number of test instances}
+\end{equation}
+
+The network program itself does not directly calculate error rates, but instead reports the results per data point to a file. 
+To calculate the error rate a small python program is used to compare the output data from the network to the ground truth test data. 
+Network outputs are interpreted using an argmax approach for a one's hot encoding. 
+Of the outputs from the network nodes, the node with the highest values is considered to be equal to 1, and all other values are 0. 
+
+After processing the network outputs, the error rate was about $0.02128$ or about 2\%.
+There were 94 data points in the test set, so this means that 2 out of the 94 evaluation data points were misclassified. 
+This shows that the network was definitely able to learn to distinguish the two celebrities from the others most of the time. 
+
+\subsection{Speed}
+% why so much slower? 
+% Three main reasons
+% Moving data to and from the GPU (input data)
+% allocating and dealocationg memory in the back prop portion of the training (forward pass = 0.0423ms)
+    % poor implemenation on the update weight loop 
+% highly tuned comercial system that uses XLA (cpu accelerated linear algebra) 
+
+\begin{table}
+    \centering
+    \caption{Program CLI options}
+    \label{speedComparison}
+    \begin{tabular}{|l|l|l|l|l|}
+        \hline
+        Implementation & Hardware & network Arch. & Avg Epoch Time & Avg Compute Time \\ \hline
+        network.exe    & GPU &  128,15,10,3& 127.4913ms & 0.6365ms \\ \hline
+        TensorFlow     & CPU & 128,15,10,3 & 56.9339ms &  0.2897ms \\ \hline
+        network.exe    & GPU &  128,300,200,3& 1914.3486ms & 10.1816ms \\ \hline
+        TensorFlow     & CPU & 128,300,200,3 & 70.5197ms & 0.3627ms \\ \hline
+    \end{tabular}
+\end{table}
+
+\section{Future Work}
+\label{Future}
+
+
+\section{Conclusion}
+\label{Conclusion}
+
+
+
+\vskip 0.2in
+\bibliography{ProjectWriteup}
+\bibliographystyle{theapa}
+
+\end{document}
