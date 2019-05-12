@@ -71,8 +71,8 @@ def multilayer_perceptron(x, weights, biases, keep_prob):
 
 
 n_input = 128
-n_hidden_1 = 513
-n_hidden_2 = 513
+n_hidden_1 = 300
+n_hidden_2 = 200
 n_classes = 3
 
 weights = {
