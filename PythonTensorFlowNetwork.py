@@ -71,8 +71,8 @@ def multilayer_perceptron(x, weights, biases, keep_prob):
 
 
 n_input = 128
-n_hidden_1 = 15
-n_hidden_2 = 10
+n_hidden_1 = 513
+n_hidden_2 = 513
 n_classes = 3
 
 weights = {
@@ -167,8 +167,8 @@ for i in range(cross_val_number):
             epoch_stop_time = time.time()
             total_itter_time += epoch_stop_time - epoch_start_time
             
-            # print("Average time per epoch: {}ms".format((total_itter_time/(epoch+1)*1000)))
-            # print("Average time per kernel run: {}ms".format((total_time_per_run/(total_batch*(epoch+1)))*1000))
+            print("Average time per epoch: {}ms".format((total_itter_time/(epoch+1)*1000)))
+            print("Average time per kernel run: {}ms".format((total_time_per_run/(total_batch*(epoch+1)))*1000))
         
         print("Optimization Finished!")
         print("==============\n")
