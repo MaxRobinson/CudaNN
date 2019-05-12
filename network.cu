@@ -300,7 +300,7 @@ float* layerMult(float* input_values, int input_size,
     // perform sigmoid transform to hidden layer values
     // input now has hidden layer 1 values
     // printf("about to run sigmoid\n");
-    sigmoid<<<1, weight_col_size>>>(layer_outputs, weight_col_size);
+    sigmoid<<<numBlocks, blockSize>>>(layer_outputs, weight_col_size);
     
     #if DEBUG
     float* c = (float *)malloc (1 * weight_col_size * sizeof (float));
