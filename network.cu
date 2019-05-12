@@ -464,13 +464,10 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     for(int i = 0; i < output_layer_size; i++){
         weightUpdate<<<numBlocks, blockSize>>>(weights3_d, &delta_ks_d[i], dev_network_output->layer2, alpha, i * hidden_layer_2_size, hidden_layer_2_size);
     }
-
-    // cudaEvent_t stop = getTime(0);
-    // cudaThreadSynchronize();
-    // cudaEventSynchronize(stop);
-    // cudaEventDestroy(stop);
-
+    
     // release intermediates 
+    cublasFree(delta_js_l2_d);
+    cublasFree(delta_js_l1_d);
 
 }
 
@@ -619,10 +616,13 @@ int main(int argc, char** argv) {
         int itter = 0;
         // while( abs(average_error - previous_average_error) > .000001 && abs(average_error) < abs(previous_average_error) && itter < MAX_EPOCHS ){
         // timing code
+        float epoch_time = 0;
         float total_itter_time = 0;
         float total_fp_time = 0;
         float total_bp_time = 0; 
-        while(itter < epochs){        
+        while(itter < epochs){      
+            float epochEachTime = 0;
+            cudaEvent_t epochStart = getTime(0);
             previous_average_error = average_error;
             average_error = 0;
             for(int i = 0; i < trainingData_h.size(); i++){
@@ -704,10 +704,21 @@ int main(int argc, char** argv) {
             average_error = average_error/trainingData_h.size();
             printf("Average Error for Epoch #%d: %f \n", itter, average_error);
             itter++;
+
+
+            cudaEvent_t epochStop = getTime(0);
+            cudaEventSynchronize(epochStop);
+            cudaThreadSynchronize();
+            cudaEventElapsedTime(&epochEachTime, epochStart, epochStop);
+            epoch_time += epochEachTime;
+            
+            cudaEventDestroy(epochStart);
+            cudaEventDestroy(epochStop);
             
             #if DEBUG_TIMEING
             // print times
             float totalItters = itter*trainingData_h.size();
+            printf("Epoch Time: %f \n", epoch_time / itter);
             printAvgTraingTimes(totalItters, total_itter_time, total_fp_time, total_bp_time);
             #endif
         }
@@ -715,6 +726,7 @@ int main(int argc, char** argv) {
 
         // print times
         float totalItters = itter*trainingData_h.size();
+        printf("Epoch Time: %fms \n", epoch_time / epochs);
         printAvgTraingTimes(totalItters, total_itter_time, total_fp_time, total_bp_time);
         
         cout << "Finished Training" << endl;

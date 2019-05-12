@@ -10,7 +10,7 @@
 
 #define MAX_LAYERS 4
 #define DEFAULT_ALPHA .1
-#define DEFAULT_EPOCHS 200
+#define DEFAULT_EPOCHS 100
 
 struct NetworkArch{
     int inputLayer; 
@@ -129,7 +129,7 @@ class InputValues {
 
         void checkHelp(int argc){
             if(argc <= 1){
-                cout << "Usage is: ./network.exe --archFile <> --weights <optional> --training <trainingDataFile> --groundTruth <gtFile> --validation <dataFile> --evaluation <dataFileForEval> --output <networkWeightSaveFile>" << endl;
+                cout << "Usage is: ./network.exe --archFile <> --weights <optional> --training <trainingDataFile> --groundTruth <gtFile> --evaluation <dataFileForEval> --output <networkWeightSaveFile> --alpha <.1> --epochs <200>" << endl;
                 exit(EXIT_SUCCESS);
             }
         }
@@ -309,7 +309,7 @@ void writeResultData(string filePath, vector<float*>* results, int elements_per_
 void printAvgTraingTimes(int totalItters, float total_itter_time, float total_fp_time, float total_bp_time){
     //print times
     printf("Average Times of compute: \n");
-    printf("Itteration: %.4fms Forward Pass: %.4fms BackProp: %.4fms \n", total_itter_time/totalItters, total_fp_time/totalItters, total_bp_time/totalItters);
+    printf("Iteration: %.4fms Forward Pass: %.4fms BackProp: %.4fms \n", total_itter_time/totalItters, total_fp_time/totalItters, total_bp_time/totalItters);
     cout << endl;
 }
 
