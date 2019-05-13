@@ -131,6 +131,7 @@ Additionally, the vector and matrix approach enables implementation on GPU archi
 For this implementation, CUDA was chosen as the API to use to implement a multilayer perceptron on a GPU. 
 
 \subsection{Network Architecture}
+\label{Network Arch Section}
 To take advantage of multiple cores and threads on the GPU, the network architecture was structured into two parts: three weight matrices, and four vectors to represent layer outputs plus the input vector. 
 The weight matrices were stored as column based matrices to be compatible with CUDA. 
 
@@ -171,6 +172,7 @@ The 4x3 matrix represents the weights that connect the input nodes from the inpu
 To compute and train a multilayer perceptron for this implementation, there are two parts to the computation: the forward pass and the back propagation. 
 All computation takes place on the GPU device, except for where explicitly stated that it does not. 
 \subsubsection{Forward Pass}
+\label{FPSection}
 Once the network has been created as a set of matrices the forward pass of the neural network becomes a series of matrix multiplications, and kernel calls.
 The matrix multiplication takes an input vector and a weight matrix and produces the next layers raw output. 
 The raw output of the next layer is equivalent to the $x_j$ in equation \ref{Forward Pass}. 
@@ -320,7 +322,7 @@ The network was trained for 300 epochs and a learning parameter of $alpha = .1$.
 \subsection{Speed}
 To compare the speed of the multilayer perceptron implementation in this paper, a multilayer perceptron was implemented using TensorFlow on a CPU. 
 The implementations are compared with two different network architectures. 
-One network has architecture 128, 15, 10, 3, and the other has architecture 128, 300, 200, 3. 
+One network has an architecture of 128, 15, 10, 3, and the other has an architecture of 128, 300, 200, 3. 
 
 The TensorFlow implementation for a multilayer perceptron is similar to the GPU implementation in this paper but there are two key differences. 
 First, the TensorFlow implementation uses a softmax cross entropy loss function, while the GPU implementation uses squared error. 
@@ -353,6 +355,59 @@ There were 94 data points in the test set, so this means that 2 out of the 94 ev
 This shows that the network was definitely able to learn to distinguish the two celebrities from the others most of the time. 
 
 \subsection{Speed}
+
+The GPU implementation in this paper, called ``network.exe", and the TensorFlow implementation were trained on the same set of data as the accuracy experiment. 
+Average compute time is the time taken to do a forward pass through the network, calculate errors, and do a back propagation on a single training data point. 
+The FP time is the time it takes to complete only the forward pass through the network. 
+The overall average epoch time is the time taken to do a forward pass and back propagation for every data point in the training set once. 
+The back propagation time is not explicitly reported due to constraints in the TensorFlow implementation that does not give insight in the back propagation portion of the algorithm. 
+
+Table \ref{speedComparison} has the results for running the training and capturing timing metrics for training. 
+The results show that for overall epoch time for both network architectures, the TensorFlow implementation is quite a bit faster. 
+For the smaller network it is about two times faster and for the larger network it is about 23 times faster overall. 
+However, for the forward pass time, network.exe was about three times faster than the TensorFlow implementation. 
+This means that most of the disparity in compute times is in the back propagation portion of the algorithm. 
+
+Given the implementation of the network.exe, and the complexity of training a multilayer perceptron this sort of makes sense. 
+The simplest part of training a multilayer perceptron is the forward pass. 
+As described above in sections \ref{Network Arch Section} and \ref{FPSection}, the weights are represented as matrices and the forward pass is a series of matrix multiplications. 
+Matrix multiplications on the GPU are done using an optimized parallelized CUDA library.
+This would make it the most likely to run faster than on a CPU even with basic linear algebra libraries. 
+The highly tested and developed CUDA libraries provide great optimization and speed in this area. 
+
+The back propagation part of the algorithm is where the most custom code and kernels are run. 
+This is where the biggest time differences show. 
+There are a few likely reasons for this GPU implementation to be slower. 
+One is data transfer and memory allocations taking place on the GPU. 
+Second is a not having optimized weight update and error calculations. 
+Third is that TensorFlow is also using a compiler called XLA (https://www.tensorflow.org/xla) which is an accelerated linear algebra compiler to optimize. 
+
+When running the multilayer perceptron, the GPU implementation described in this paper ends up allocating and deallocating memory on the GPU frequently. 
+For example, calculating the errors for each layer in the network and using them for back propagation requires allocation of addition GPU memory to hold the errors. 
+The allocated space is also then deallocated to ensure no memory is leaked. 
+There are several places in the code where space is allocated and deallocated that might slow down the computation process. 
+
+In addition, data must be moved to and from the GPU for each new data point. 
+This requires copying data where the TensorFlow implementation does not need to. 
+
+The back propagation implementation for this paper is also probably not optimized properly. 
+There are several places where loops are used to help calculate various parts or enqueue computation. 
+For example, to calculate the contribution to error, a loop is used to call a cublasSdot function. 
+Using a loop to call the cublasSdot function, while better than doing a looped dot product, is likely not as optimized as possible. 
+
+The ``weightUpdate" kernel is also enqueued using a loop.
+While each kernel is enqueued and run in parallel, there might be a more efficient way to update all the weights in the network. 
+Rather than enqueuing multiple kernels, it might be possible to write one kernel to update all the weights at once. 
+The difficult part of this is that each column in the kernel must have the same $x_{ji}$ applied to it. 
+
+Lastly, the TensorFlow API is a highly optimized commercial library even for implementation on a CPU.
+TensorFlow uses a compiler XLA (https://www.tensorflow.org/xla), that optimizes linear algebra operations on all different hardware, including CPUs. 
+These optimizations enable the forward pass and back propagation to be as fast as possible and creates machine code that optimizes loops and kernel launches (https://developers.googleblog.com/2017/03/xla-tensorflow-compiled.html). 
+
+
+%While effective and implement the functions of a multilayer perceptron, might not be as optimized as a highly tested and accelerated CPU implementation. 
+
+
 % why so much slower? 
 % Three main reasons
 % Moving data to and from the GPU (input data)
@@ -360,22 +415,23 @@ This shows that the network was definitely able to learn to distinguish the two 
     % poor implemenation on the update weight loop 
 % highly tuned comercial system that uses XLA (cpu accelerated linear algebra) 
 
+
 \begin{table}
     \centering
     \caption{Program CLI options}
     \label{speedComparison}
     \begin{tabular}{|l|l|l|l|l|}
         \hline
-        Implementation & Hardware & network Arch. & Avg Epoch Time & Avg Compute Time \\ \hline
-        network.exe    & GPU &  128,15,10,3& 127.4913ms & 0.6365ms \\ \hline
-        TensorFlow     & CPU & 128,15,10,3 & 56.9339ms &  0.2897ms \\ \hline
-        network.exe    & GPU &  128,300,200,3& 1914.3486ms & 10.1816ms \\ \hline
-        TensorFlow     & CPU & 128,300,200,3 & 70.5197ms & 0.3627ms \\ \hline
+        Implementation & Network Arch. & Avg Epoch Time & Avg Compute Time & FP Time\\ \hline
+        network.exe    &  128,15,10,3 & 127.4913ms & 0.6365ms & 0.0426ms \\ \hline
+        TensorFlow     &  128,15,10,3  & 64.4191ms &  0.3302ms & 0.14902ms\\ \hline
+        network.exe    &  128,300,200,3 & 1914.3486ms & 10.1816ms &  0.0558ms \\ \hline
+        TensorFlow     &  128,300,200,3 & 84.9011ms & 0.4649ms & 0.1597ms \\ \hline
     \end{tabular}
 \end{table}
 
-\section{Future Work}
-\label{Future}
+%\section{Future Work}
+%\label{Future}
 
 
 \section{Conclusion}
