@@ -16,3 +16,8 @@ To quickly see how the program works, three convenience scripts are supplied.
 * `runWithoutWeights.sh` runs the program without any specified weights file. 
 * `eval.sh` runs the program with only the evaluation set of data and loads weights from the `weightsTest.txt` file. 
 
+## Compilation
+Run `make` in the main directory. 
+__NOTE:__ Ensure that the `nvcc` compiler is in your path.   
+If not, run something like the following before running make `export PATH=$PATH:/usr/local/cuda-8.0/bin`  
+This assumes you have CUDA installed. 
