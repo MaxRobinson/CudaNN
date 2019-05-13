@@ -1,10 +1,10 @@
 # CudaNN - Class Project for Intro to GPU Programing JHU
-
 This project is a GPU implementation of a Neural Network with 2 hidden layers, also known as a Multi Layer Perceptron (MLP). 
 
 
 The implemenation leverages CUBLAS to help with the matrix multiplication parts of the neural networks. The completed program will implement a neural network that can be trained using the [Backpropagation](https://en.wikipedia.org/wiki/Backpropagation) algorithm. The goal is to do both the forward pass and backpropogation on the GPU to enable parallelism where possible and increase the speed of training and classification. 
 
+Code also at [https://github.com/MaxRobinson/CudaNN](https://github.com/MaxRobinson/CudaNN)
 
 ## Usage
 ``` bash
