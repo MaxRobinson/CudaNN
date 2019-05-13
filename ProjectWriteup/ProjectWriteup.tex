@@ -274,7 +274,7 @@ If no weights file is specified a random set of weights is created to fit the ar
 The weights are initialized on the GPU using the cuRAND CUDA library. 
 The weights are then shifted using a kernel function to be between the values of $-0.5$ and $0.5$.
 
-When training a network, the ``--training" flag and the ``--GroundTruth" flags must have values that point to a training file and corresponding ground truth file. 
+When training a network, the ``--training" flag and the ``--groundTruth" flags must have values that point to a training file and corresponding ground truth file. 
 The training file must be a csv file where each line is the size of the input layer to the network. 
 The ground truth file must be a csv file where each line is the size of the output layer in the network.
 Ground Truth files should can not be larger than what can be loaded into host memory. 
