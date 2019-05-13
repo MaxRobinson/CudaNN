@@ -66,7 +66,12 @@ def multilayer_perceptron(x, weights, biases, keep_prob):
     layer_1 = tf.add(tf.matmul(x, weights['h1']), biases['b1'])
     layer_1 = tf.nn.sigmoid(layer_1)
     layer_1 = tf.nn.dropout(layer_1, keep_prob)
-    out_layer = tf.matmul(layer_1, weights['out']) + biases['out']
+
+    layer_2 = tf.add(tf.matmul(layer_1, weights['h2']), biases['b2'])
+    layer_2 = tf.nn.sigmoid(layer_2)
+    layer_2 = tf.nn.dropout(layer_2, keep_prob)
+
+    out_layer = tf.matmul(layer_2, weights['out']) + biases['out']
     return out_layer
 
 
@@ -78,7 +83,7 @@ n_classes = 3
 weights = {
     'h1': tf.Variable(tf.random_normal([n_input, n_hidden_1])),
     'h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
-    'out': tf.Variable(tf.random_normal([n_hidden_1, n_classes]))
+    'out': tf.Variable(tf.random_normal([n_hidden_2, n_classes]))
 }
 
 biases = {
@@ -91,7 +96,7 @@ keep_prob = tf.placeholder("float")
 
 training_epochs = 5000
 display_step = 1000
-batch_size = 1
+batch_size = 32
 
 x = tf.placeholder("float", [None, n_input])
 y = tf.placeholder("float", [None, n_classes])
@@ -167,8 +172,8 @@ for i in range(cross_val_number):
             epoch_stop_time = time.time()
             total_itter_time += epoch_stop_time - epoch_start_time
             
-            print("Average time per epoch: {}ms".format((total_itter_time/(epoch+1)*1000)))
-            print("Average time per kernel run: {}ms".format((total_time_per_run/(total_batch*(epoch+1)))*1000))
+            # print("Average time per epoch: {}ms".format((total_itter_time/(epoch+1)*1000)))
+            # print("Average time per kernel run: {}ms".format((total_time_per_run/(total_batch*(epoch+1)))*1000))
         
         print("Optimization Finished!")
         print("==============\n")
@@ -180,8 +185,12 @@ for i in range(cross_val_number):
         correct_prediction = tf.equal(tf.argmax(predictions, 1), tf.argmax(y, 1))
         print(correct_prediction)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+        startEval = time.time()
         accur_val = accuracy.eval({x: x_test, y: y_test, keep_prob: 1.0})
+        endEval = time.time()
         print("Accuracy:", accur_val)
+
+        print("Avg Time per eval: {}ms".format(((endEval-startEval)/(len(x_test))) *1000 ))
 
         accuracy_list.append(accur_val)
 
