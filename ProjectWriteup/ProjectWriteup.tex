@@ -22,13 +22,24 @@
 \section{Introduction}
 \label{Introduction}
 \footnotetext{Some pieces of this project writeup are derived from previous work by Max Robinson for CS499}
+Neural networks are an algorithm and concept that is popular and has proven very effective in the realm of Artificial Intelligence and Machine Learning. 
+The multilayer perceptron is an particular instantiation of a feedforward neural network that has been shown to be very effective. 
+It has been shown that a network with one hidden layer can be used as a universal approximator given a sufficient number of nodes in the hidden layer \cite{MLFFNetworks}.
+With the capabilities that neural networks can provide, creating working and efficient implementations of multilayer perceptrons is a useful capability to have. 
+
+The goal of this project and paper is to implement and describe a GPU accelerated implementation of a multilayer perceptron using CUDA. 
+The program implemented was shown to successfully be able to learn to classify data well, all while running on a GPU. 
+While not the fastest overall implementation of a multilayer perceptron, the implementation was shown to have some computational benefits while needing improvements in others. 
+
+The rest of the paper describes the background of neural networks, the implementation, program, and experiments run to validate and compare the implementation. 
+
 
 \section{Background}
 \label{Background}
 This section describes the details behind how Multilayer perceptrons and the back propagation algorithms work. 
 
 \subsection{Feedforward Neural network and Multilayer Perceptrons}
-A feedforward multilayer perceptron neural network is a structure for a learning algorithm that is uses connected nodes in a directed manner to solve the problems of classification or regression. 
+A feedforward multilayer perceptron neural network is a structure for a learning algorithm that uses connected nodes in a directed manner to solve the problems of classification or regression. 
 Specifically feedforward neural networks are usually multilayered. 
 These networks are typically structured as layers of nodes with non-linear activations functions that are connected to another layer of nodes. 
 
@@ -38,19 +49,19 @@ Each connection from one node to another has a weight $w_{ij}$.
 A bias node with the value of 1 is also introduced at each layer, but no nodes connect to this bias, as it serves only to help serve as a threshold value \cite{BackProp}.
 
 
-For a node, a non-linear activation function is used to determine and constrain the val ue of the inputs before passing on the value. 
-It is important that this activation function be non-linear as this is what allows a network to learn non-learn models. 
+For a node, a non-linear activation function is used to determine and constrain the value of the inputs before passing it on. 
+It is important that this activation function be non-linear as this is what allows a network to learn non-linear models. 
 
 For this implementation, the non-linear activation function used is the logistic function.
-To calculate the value of a given node in the network, a linear combinations of the input values multiplied by the weight on the connection is taken as shown in equation \ref{Forward Pass} \cite{BackProp}.
+To calculate the value of a given node in the network, a linear combinations of the input values multiplied by the weight on the connection is taken as shown in Equation \ref{Forward Pass} \cite{BackProp}.
 
 \begin{equation}
 \label{Forward Pass}
 x_j = \sum_{i}{y_i w_{ij}}
 \end{equation}
 
-In equation \ref{Forward Pass}, $x_j$ is the jth unit or node and $y_i$ is the ith input into $j$ and $w_{ij}$ is the weight between unit $i$ and $j$. 
-This linear combination is then put through the nodes activation function \cite{BackProp} show in equation \ref{activation}.
+In Equation \ref{Forward Pass}, $x_j$ is the jth unit or node and $y_i$ is the ith input into $j$ and $w_{ij}$ is the weight between unit $i$ and $j$. 
+This linear combination is then put through the nodes activation function \cite{BackProp} show in Equation \ref{activation}.
 
 \begin{equation}
 \label{activation}
@@ -58,9 +69,9 @@ y_j = \frac{1}{1+e^{-x_j}}
 \end{equation}
 
 
-In equation \ref{activation}, $y_j$ is the output of node $j$, with input value of $x_j$ as described above. Again, notice that the activation function is non-linear.
+In Equation \ref{activation}, $y_j$ is the output of node $j$, with input value of $x_j$ as described above. Again, notice that the activation function is non-linear.
 
-To get the total error for the network, which is how difference the output of the network is from the expected output of the network, is described using a form of squared error. Formally $E$ can be described by equation \ref{error}\cite{BackProp}.
+To get the total error for the network, which is how difference the output of the network is from the expected output of the network, is described using a form of squared error. Formally $E$ can be described by Equation \ref{error}\cite{BackProp}.
 
 \begin{equation}
 \label{error}
@@ -68,10 +79,9 @@ E = \frac{1}{2} \sum_{c}\sum_{j}(y_{j,c}-d_{j,c})^2
 \end{equation}
 
 
-In equation \ref{error}, $c$ is an index over the dataset, and $j$ is an index over the output units. 
-For example if there could be two output nodes of the network. 
-$y$ is the output of the network for a given output node.
-$d$ is the desired state for that output node. 
+In Equation \ref{error}, $c$ is an index over the dataset, and $j$ is an index over the output units. 
+For example, if there could be two output nodes of the network $y$ is the output of the network for a given output node.
+Then, $d$ is the desired state for that output node. 
 This sum gives the total error of the state on a forward pass through the network.
 More simply $ E = \frac{1}{2}(y_{j}-d_{j})^2$ is describes the error at a given node $j$ given an predicted output $y_j$ and desired output $d_j$. 
 
@@ -79,9 +89,9 @@ More simply $ E = \frac{1}{2}(y_{j}-d_{j})^2$ is describes the error at a given 
 \label{Back Propagation}
 To train a feedforward neural network a technique called back propagation is used, which was developed by Rumelhart, Hinton, and Williams \shortcite{BackProp}. 
 Back propagation is used to incrementally update all of the weights in the neural network based on the error of the output of the network. 
-This technique uses Gradient Descent by following the partial derivative of the error function with respect to the inputs and outputs to optimize the network. 
+This technique uses gradient-descent by following the partial derivative of the error function with respect to the inputs and outputs to optimize the network. 
 This update is done in two parts, first calculating the update rule for the output layer, and then calculating the weight updates for the hidden layers.  
-The update rule for the output layer is described in equation \ref{Abstract}.
+The update rule for the output layer is described in Equation \ref{fullBP}.
 
 \begin{equation}
 \label{fullBP}
@@ -92,7 +102,7 @@ The update rule for the output layer is described in equation \ref{Abstract}.
 \Delta w_{ij} = \alpha \delta_k x_{ij}, \delta_k = (d_j - y_j)(1-y_j)y_j
 \end{equation}
 
-Here, alpha is the learning rate, $d_j$ is the correct output for node $j$ and $y_j$ is the estimated output of the network for the jth output node, and x ji was the input value of the node before the activation function was applied. This $\Delta w_{ji}$ is then applied to all nodes j connect to output node i. This follows gradient descent because the first and second parts of the equation are the deriviates of the error function with respect to the outputs and the outputs with respect the activation function respectively \cite{BackProp}.
+Here, alpha is the learning rate, $d_j$ is the correct output for node $j$ and $y_j$ is the estimated output of the network for the jth output node, and $x_{ji}$ was the input value of the node before the activation function was applied. This $\Delta w_{ji}$ is then applied to all nodes $j$ connect to output node $i$. This follows gradient descent because the first and second parts of the equation are the derivatives of the error function with respect to the outputs and the outputs with respect the activation function respectively \cite{BackProp}.
 
 
 \begin{equation}
@@ -101,7 +111,7 @@ Here, alpha is the learning rate, $d_j$ is the correct output for node $j$ and $
 \end{equation}
 
 This sum is then combined with the derivative of the nodes activation function. 
-This gives the total derivative update described by equation \ref{delta J}.
+This gives the total derivative update described by Equation \ref{delta J}.
 
 \begin{equation}
 \label{delta J}
@@ -113,8 +123,8 @@ This gives the total derivative update described by equation \ref{delta J}.
 \Delta w_{ji} = \alpha \delta_j x_{ji}
 \end{equation}
 
-The update rule for weights for hidden layers is then described by equation \ref{hiddenUpdate}. 
-The update rule in equation \ref{hiddenUpdate} applies to all hidden nodes and weights. 
+The update rule for weights for hidden layers is then described by Equation \ref{hiddenUpdate}. 
+The update rule in Equation \ref{hiddenUpdate} applies to all hidden nodes and weights. 
 These updates are applied to the network following the typical gradient descent pattern. 
 Once the network has finished training, the forward propagation part of the process of the network is used to get estimated outputs.
 
@@ -137,7 +147,7 @@ The weight matrices were stored as column based matrices to be compatible with C
 
 Each row in the matrix represents all of the weights from an input node (e.g. A) to all the nodes in the next layer. 
 More importantly, each column in the matrix represent all the weights that are inbound on a single node in the next layer. 
-In equation \ref{networkArch}, $H1$ has inputs from all input nodes with weights $A_{H1}$, $B_{H1}$, $C_{H1}$, $D_{H1}$
+In Equation \ref{networkArch}, $H1$ has inputs from all input nodes with weights $A_{H1}$, $B_{H1}$, $C_{H1}$, $D_{H1}$
 
 \begin{equation}
 \label{networkArch}
@@ -175,11 +185,11 @@ All computation takes place on the GPU device, except for where explicitly state
 \label{FPSection}
 Once the network has been created as a set of matrices the forward pass of the neural network becomes a series of matrix multiplications, and kernel calls.
 The matrix multiplication takes an input vector and a weight matrix and produces the next layers raw output. 
-The raw output of the next layer is equivalent to the $x_j$ in equation \ref{Forward Pass}. 
+The raw output of the next layer is equivalent to the $x_j$ in Equation \ref{Forward Pass}. 
 The CUDA cuBLAS library \textit{cublasSgemm} function is used to compute the matrix multiplication efficiently.
 
 After the $x_j$s have been computed the activation function still needs to be applied to get the final output of the layer. 
-To compute efficiently compute the output of the activation function in parallel, a custom CUDA kernel is applied to apply the activation function seen in equation \ref{activation}.
+To compute efficiently compute the output of the activation function in parallel, a custom CUDA kernel is applied to apply the activation function seen in Equation \ref{activation}.
 This kernel applies the activation function to each data point individually in parallel. 
 
 After both the matrix multiplication and activation function have been applied, the output of that layer is complete. 
@@ -191,23 +201,23 @@ During training, all intermediate layer output values are held onto as they are 
 \subsubsection{Back Propagation}
 For the implementation the Back Propagation algorithm is chosen to make updates to the network. 
 The loss function implemented is a squared error loss function and all deltas and error functions are based on a gradient descent based approach based on the squared error loss function. 
-The equations to describe the update functions are found in equations \ref{fullBP} - \ref{hiddenUpdate}
+The equations to describe the update functions are found in Equations \ref{fullBP} - \ref{hiddenUpdate}
 
 To implement back propagation on a GPU several kernels are used to calculate the necessary pieces step by step in parallel. 
 The first step is to calculate the $\delta_k$ error terms for the last layer.
-This is done in parallel using a custom kernel that applies the $\delta_k$ function seen in equation \ref{delta_k}. 
+This is done in parallel using a custom kernel that applies the $\delta_k$ function seen in Equation \ref{delta_k}. 
 The results provides the necessary components to update the last weight matrix. 
 
 For each hidden layer, starting from the layers closest to the output layer, the contribution of each node to the error for each output node is calculated.
-The contribution to error is specified by equation \ref{contribError}. 
+The contribution to error is specified by Equation \ref{contribError}. 
 This is calculated by iterating through the hidden layer and calculating the dot product of that row of the weight matrix and the $\delta_k$s that were previously calculated. 
 The \textit{cublasSdot} function is used to compute the dot product. 
 After the contribution to error is computed the $\delta_j$ values or error values for hidden nodes is computed with a custom kernel. 
-The custom kernel applies equation \ref{delta J} to each node output in parallel. 
+The custom kernel applies Equation \ref{delta J} to each node output in parallel. 
 These steps are done for each hidden layer. 
 
 Once all error terms have been calculated the weights of the network are updated. 
-Updating the weights of the network applies equations \ref{hiddenUpdate} and \ref{delta_k}. 
+Updating the weights of the network applies Equations \ref{hiddenUpdate} and \ref{delta_k}. 
 The weights are updated by enqueuing a series of custom kernels that update each column of the weight matrix with the appropriate $x_{ji}$ value as each column of the weight matrix is associated with a node. 
 Weights are updated in place in the matrix. 
 
@@ -295,7 +305,7 @@ Figure \ref{TrainingOutput} shows a sample output of the network while training.
 The program is also able to use the network to provide output for a dataset. 
 If an evaluation file is provided, the network reads in the evaluation file and only performs the forward pass of the network for each data point. 
 Evaluation files should be structured the same as training data files, and must not be larger than what can be loaded into host memory. 
-The network output is then collected and saved in csv format to a "ResultsFile.txt". 
+The network output is then collected and saved in csv format to a ``ResultsFile.txt". 
 Each line of the results file is an output from the network that corresponds to that line of the evaluation file as input data. 
 
 At the end of any execution, evaluation or training, if an output file is specified by the ``--output" option, the weights of the network are written to that file. 
@@ -304,10 +314,10 @@ If no file is specified, the weights are written to a file called ``weights\_\{\
 \section{Experiment}
 \label{Experiment}
 To test that the multilayer perceptron works a network was training on a dataset built for face recognition to see how accurate it can be. 
-Additionally, the speed of the implemented network is compared the that of a commercial CPU based implementation, TensorFlow \cite{tensorFlow}. 
+Additionally, the speed of the implemented network is compared the that of a commercial CPU based implementation, TensorFlow (https://www.tensorflow.org/). 
 
 \subsection{Accuracy}
-For our accuracy test, the dataset consists of 1x128 vectors that were created using OpenFace \cite{openface} on a celebrity faces image dataset. 
+For our accuracy test, the dataset consists of 1x128 vectors that were created using OpenFace \cite{openface} on a celebrity faces image dataset \cite{celebrityFaces}. 
 The images first were passed through a face detection algorithm implemented using dlib, an open source c++ algorithm library. 
 After faces were detected, OpenFace was used to embed the faces into a 1x128 dimensional vector. 
 
@@ -368,7 +378,7 @@ For the smaller network it is about two times faster and for the larger network 
 However, for the forward pass time, network.exe was about three times faster than the TensorFlow implementation. 
 This means that most of the disparity in compute times is in the back propagation portion of the algorithm. 
 
-Given the implementation of the network.exe, and the complexity of training a multilayer perceptron this sort of makes sense. 
+Given the above described implementation and the complexity of training a multilayer perceptron this sort of makes sense. 
 The simplest part of training a multilayer perceptron is the forward pass. 
 As described above in sections \ref{Network Arch Section} and \ref{FPSection}, the weights are represented as matrices and the forward pass is a series of matrix multiplications. 
 Matrix multiplications on the GPU are done using an optimized parallelized CUDA library.
@@ -436,8 +446,16 @@ These optimizations enable the forward pass and back propagation to be as fast a
 
 \section{Conclusion}
 \label{Conclusion}
+The multilayer perceptron GPU implementation described in this paper is an effective implementation capable of learning to classify data points. 
+Computation for the multilayer perceptron takes place almost entirely on the GPU. 
+It utilizes both built in CUDA libraries and custom kernel execution to complete computation. 
+The program implementation allows for users to specify several command line parameters to enable custom execution of the program. 
 
+When comparing the speed of the implementation, it is generally slower to train than the reference TensorFlow implementation.
+The GPU implementation is faster for computing the output of the network, however. 
+While the program is effective and implements the functions of a multilayer perceptron, it is not as optimized as a highly tested and accelerated CPU implementation. 
 
+With a few changes and updates to the GPU implementation, it is hopeful that this implementation might be able to close the gap in speed, while remaining an effective and working GPU accelerated multilayer perceptron. 
 
 \vskip 0.2in
 \bibliography{ProjectWriteup}
