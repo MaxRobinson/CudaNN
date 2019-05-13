@@ -466,6 +466,7 @@ void backPropagate(float alpha, NetworkArch* networkArch, Network* network, Netw
     }
     
     // release intermediates 
+    cublasFree(delta_ks_d);
     cublasFree(delta_js_l2_d);
     cublasFree(delta_js_l1_d);
 
